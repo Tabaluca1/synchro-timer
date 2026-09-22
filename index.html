@@ -152,8 +152,8 @@
 </head>
 <body>
 
-  <!-- 0. LOBBY / STARTSEITE (Wenn kein Raum gewählt ist) -->
-  <div id="lobby-view" class="lobby-card hidden">
+  <!-- 0. LOBBY / STARTSEITE (Standardmäßig sichtbar, wenn kein Raum gewählt ist) -->
+  <div id="lobby-view" class="lobby-card">
     <h2>Synchro Timer</h2>
     
     <div id="lobby-step-1">
@@ -270,7 +270,6 @@
           audioContext = new AudioCtx();
           
           // iOS Trick: Erzeuge einen unendlichen, lautlosen Ton (0 Hz / Stille)
-          // Das hält die iOS Audio-Engine im Hintergrund dauerhaft aktiv.
           const buffer = audioContext.createBuffer(1, 22050, 22050);
           const source = audioContext.createBufferSource();
           source.buffer = buffer;
@@ -290,12 +289,10 @@
     }
 
     function playAlarmSound() {
-      // Wenn der AudioContext schläft (z.B. nach Inaktivität), wieder aufwecken
       if (audioContext && audioContext.state === 'suspended') {
         audioContext.resume();
       }
 
-      // MP3 abspielen
       const alarm = new Audio('alarm.mp3');
       alarm.play().catch(e => {
         console.log("Audio-Wiedergabe vom Browser blockiert:", e);
@@ -319,10 +316,13 @@
 
     let wakeLock = null;
 
-    // A. PRÜFEN: SIND WIR IN EINEM RAUM ODER AUF DER STARTSEITE?
+    // A. ANSICHT STEUERN: LOBBY ODER TIMER
     if (!roomName) {
+      // Wenn kein Raum in der URL definiert ist -> Lobby explizit einblenden
       lobbyView.classList.remove('hidden');
     } else {
+      // Wenn ein Raum in der URL existiert -> Lobby ausblenden & Timer-Räume aufbauen
+      lobbyView.classList.add('hidden');
       db = firebase.database().ref("timer_state/" + roomName);
       
       timerElement.classList.remove('hidden');
@@ -390,7 +390,6 @@
           durationLeft = data.durationLeft !== undefined ? data.durationLeft : 1800;
           defaultDuration = data.defaultDuration !== undefined ? data.defaultDuration : 1800;
           
-          // Toggle Buttons synchronisieren (Play vs. Pause)
           if (isRunning) {
             playIcon.classList.add('hidden');
             pauseIcon.classList.remove('hidden');
@@ -399,7 +398,6 @@
             pauseIcon.classList.add('hidden');
           }
 
-          // Alarme zurücksetzen
           const currentSecs = getCurrentSeconds();
           if (currentSecs > 0) {
             alertedStages.zero = false;
@@ -444,7 +442,6 @@
       if (!roomName) return;
       let secs = getCurrentSeconds();
 
-      // Automatischer Reset bei -10 Minuten
       if (secs <= -600) {
         secs = defaultDuration;
         alertedStages.zero = false;
@@ -464,7 +461,6 @@
       timerElement.textContent = 
         `${isNegative ? '-' : ''}${displayMins.toString().padStart(2, '0')}:${displaySecs.toString().padStart(2, '0')}`;
 
-      // Farblogik
       document.body.classList.remove('warning', 'expired');
       if (secs <= 0) {
         document.body.classList.add('expired');
@@ -472,7 +468,6 @@
         document.body.classList.add('warning');
       }
 
-      // Alarm Stufen
       if (secs <= 0 && !alertedStages.zero) {
         playAlarmSound();
         alertedStages.zero = true;
@@ -634,4 +629,20 @@
         }
       } else {
         await wakeLock.release();
-        wakeL
+        wakeLock = null;
+        btn.textContent = "Ton & Bildschirm-Awake aktivieren";
+        btn.style.backgroundColor = "#222";
+      }
+    }
+
+    // ZUSÄTZLICHES IOS AWAKE-HANDLING
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && audioContext) {
+        if (audioContext.state === 'suspended') {
+          audioContext.resume();
+        }
+      }
+    });
+  </script>
+</body>
+</html>
