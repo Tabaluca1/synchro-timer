@@ -23,13 +23,29 @@
       align-items: center;
       justify-content: center;
       min-height: 100vh;
-      transition: background-color 0.5s ease;
+      transition: background-color 0.4s ease;
       padding: 20px;
     }
     
-    body.warning { background-color: #b30000; }
-    body.expired { background-color: #5c0000; }
-    body.flash { background-color: #2a52be; }
+    /* Warnung bei unter 2 Minuten */
+    body.warning { background-color: #d9381e; }
+    
+    /* Wellenartiges/Sanftes Pulsieren nach Ablauf der Zeit */
+    body.expired {
+      animation: pulseRed 2s infinite ease-in-out;
+    }
+
+    @keyframes pulseRed {
+      0% { background-color: #000000; }
+      50% { background-color: #e61919; } /* Hellers Rot */
+      100% { background-color: #000000; }
+    }
+
+    /* Kurzes blaues Aufleuchten bei Zeitänderung */
+    body.flash { 
+      background-color: #1e88e5 !important; 
+      animation: none !important;
+    }
 
     .timer-display {
       font-size: 5.5rem;
@@ -109,7 +125,7 @@
   </div>
 
   <!-- Timer Anzeige -->
-  <div class="timer-display" id="timer" onclick="manualEdit()">10:00</div>
+  <div class="timer-display" id="timer" onclick="manualEdit()">30:00</div>
 
   <!-- Status & Wachhalten -->
   <div class="controls">
@@ -166,9 +182,10 @@
       setupQRCode();
     }
 
-    let localTimeLeft = 600;
+    let localTimeLeft = 1800; // 30 Minuten Standard
     let localIsRunning = false;
     let wakeLock = null;
+    let hasAlertedExpired = false;
 
     const timerElement = document.getElementById('timer');
     const syncStatus = document.getElementById('sync-status');
@@ -176,8 +193,8 @@
     // 2. ECHTZEIT-SYNCHRONISATION MIT SERVER
     db.on('value', (snapshot) => {
       const data = snapshot.val();
-      console.log("Firebase Daten empfangen:", data);
       if (data) {
+        // Prüfen, ob die Zeit von außen geändert wurde (für blauen Blitz)
         if (data.timeLeft !== localTimeLeft) {
           triggerFlash();
         }
@@ -187,7 +204,7 @@
         syncStatus.textContent = "● Live synchronisiert";
         syncStatus.style.color = "#4CAF50";
       } else if (isAdmin) {
-        pushState(600, false);
+        pushState(1800, false);
       }
     }, (error) => {
       console.error("Firebase Datenbank-Fehler:", error);
@@ -205,7 +222,7 @@
       }).catch(err => console.error("Schreibfehler:", err));
     }
 
-    // 3. TIMER LOGIK
+    // 3. TIMER LOGIK & VISUELLE EFFEKTE
     function updateDisplay() {
       const isNegative = localTimeLeft < 0;
       const absSeconds = Math.abs(localTimeLeft);
@@ -216,10 +233,18 @@
         `${isNegative ? '-' : ''}${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 
       document.body.classList.remove('warning', 'expired');
+      
       if (localTimeLeft <= 0) {
         document.body.classList.add('expired');
-      } else if (localTimeLeft <= 120) {
-        document.body.classList.add('warning');
+        if (!hasAlertedExpired) {
+          playAlarmSound();
+          hasAlertedExpired = true;
+        }
+      } else {
+        hasAlertedExpired = false;
+        if (localTimeLeft <= 120) {
+          document.body.classList.add('warning');
+        }
       }
     }
 
@@ -249,9 +274,31 @@
       }
     }
 
+    // Blauer Blitz bei Zeitänderung
     function triggerFlash() {
       document.body.classList.add('flash');
-      setTimeout(() => document.body.classList.remove('flash'), 400);
+      setTimeout(() => document.body.classList.remove('flash'), 500);
+    }
+
+    // Ton erzeugen (Ohne externe Datei)
+    function playAlarmSound() {
+      try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        
+        osc.type = 'sine';
+        osc.frequency.value = 880; // Tonhöhe (A5)
+        
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        
+        osc.start();
+        gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + 1.2);
+        osc.stop(audioCtx.currentTime + 1.2);
+      } catch(e) {
+        console.log("Audio-Wiedergabe blockiert oder nicht unterstützt.");
+      }
     }
 
     // 5. HELFER (QR-Code & Wachhalten)
