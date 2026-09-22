@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Echtzeit Timer</title>
   
+  <!-- Entwickler-Konsole für Smartphones (Eruda) -->
+  <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+  <script>eruda.init();</script>
+
   <!-- QR-Code Bibliothek für den Browser -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
@@ -146,7 +150,12 @@
     };
 
     // Firebase initialisieren
-    firebase.initializeApp(firebaseConfig);
+    try {
+      firebase.initializeApp(firebaseConfig);
+    } catch(e) {
+      console.error("Firebase Init Fehler:", e);
+    }
+    
     const db = firebase.database().ref("timer_state");
 
     // Rolle prüfen
@@ -167,6 +176,7 @@
     // 2. ECHTZEIT-SYNCHRONISATION MIT SERVER
     db.on('value', (snapshot) => {
       const data = snapshot.val();
+      console.log("Firebase Daten empfangen:", data);
       if (data) {
         if (data.timeLeft !== localTimeLeft) {
           triggerFlash();
@@ -180,6 +190,7 @@
         pushState(600, false);
       }
     }, (error) => {
+      console.error("Firebase Datenbank-Fehler:", error);
       syncStatus.textContent = "Verbindungsfehler (Regeln prüfen)";
       syncStatus.style.color = "#f44336";
     });
@@ -191,7 +202,7 @@
         timeLeft: newTime,
         isRunning: isRunningState,
         updatedAt: Date.now()
-      });
+      }).catch(err => console.error("Schreibfehler:", err));
     }
 
     // 3. TIMER LOGIK
