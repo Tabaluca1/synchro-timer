@@ -133,7 +133,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
   <script>
-    // 1. DEINE FIREBASE KONFIGURATION
+    // 1. FIREBASE KONFIGURATION
     const firebaseConfig = {
       apiKey: "AIzaSyBZ8TNHdABZ9YEl84jAltPC5_iEbZMYnB0",
       authDomain: "synchro-timer1.firebaseapp.com",
@@ -179,6 +179,9 @@
       } else if (isAdmin) {
         pushState(600, false);
       }
+    }, (error) => {
+      syncStatus.textContent = "Verbindungsfehler (Regeln prüfen)";
+      syncStatus.style.color = "#f44336";
     });
 
     // Zustand an den Firebase-Server senden (Nur Admin)
