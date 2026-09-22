@@ -37,7 +37,7 @@
 
     @keyframes pulseRed {
       0% { background-color: #000000; }
-      50% { background-color: #e61919; } /* Hellers Rot */
+      50% { background-color: #e61919; } /* Helleres Rot */
       100% { background-color: #000000; }
     }
 
@@ -112,7 +112,7 @@
 </head>
 <body>
 
-  <!-- Steuerung OBEN (Nur für E) -->
+  <!-- Steuerung OBEN (Nur für Admin) -->
   <div id="admin-top" class="controls hidden">
     <div class="btn-group">
       <button class="btn-action" onclick="startTimer()">Start</button>
@@ -133,7 +133,7 @@
     <div id="sync-status" class="status-text">Verbinde mit Server...</div>
   </div>
 
-  <!-- Steuerung UNTEN (Nur für E) -->
+  <!-- Steuerung UNTEN (Nur für Admin) -->
   <div id="admin-bottom" class="controls hidden" style="margin-top: 15px;">
     <div class="btn-group">
       <button onclick="changeTime(-30)">-30 s</button>
@@ -165,7 +165,6 @@
       measurementId: "G-W82QS25S5W"
     };
 
-    // Firebase initialisieren
     try {
       firebase.initializeApp(firebaseConfig);
     } catch(e) {
@@ -174,7 +173,6 @@
     
     const db = firebase.database().ref("timer_state");
 
-    // Rolle prüfen
     const isAdmin = new URLSearchParams(window.location.search).get('role') === 'admin';
     if (isAdmin) {
       document.getElementById('admin-top').classList.remove('hidden');
@@ -182,11 +180,22 @@
       setupQRCode();
     }
 
-    let localTimeLeft = 1800; // 30 Minuten Standard
-    let localIsRunning = false;
-    let wakeLock = null;
-    let hasAlertedExpired = false;
+    // Timer Variablen
+    let isRunning = false;
+    let targetTime = 0;       // Timestamp in ms, wann Timer bei 00:00 ankommt
+    let durationLeft = 1800;  // Verbleibende Sekunden bei Pause (Standard 30 min)
+    
+    let isInitialLoad = true;
+    let lastDurationLeft = 1800;
+    
+    // Tracker für die 3 Alarm-Stufen
+    let alertedStages = {
+      zero: false,
+      minus5: false,
+      minus10: false
+    };
 
+    let wakeLock = null;
     const timerElement = document.getElementById('timer');
     const syncStatus = document.getElementById('sync-status');
 
@@ -194,17 +203,33 @@
     db.on('value', (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        // Prüfen, ob die Zeit von außen geändert wurde (für blauen Blitz)
-        if (data.timeLeft !== localTimeLeft) {
-          triggerFlash();
+        // Prüfen ob Zeit manuell/über Buttons geändert wurde
+        if (!isInitialLoad) {
+          const expectedRemaining = data.isRunning ? Math.round((data.targetTime - Date.now()) / 1000) : data.durationLeft;
+          if (Math.abs(expectedRemaining - lastDurationLeft) > 1) {
+            triggerFlash();
+          }
         }
-        localTimeLeft = data.timeLeft;
-        localIsRunning = data.isRunning;
+        
+        isRunning = data.isRunning;
+        targetTime = data.targetTime || 0;
+        durationLeft = data.durationLeft !== undefined ? data.durationLeft : 1800;
+        
+        // Alarme zurücksetzen, wenn der Timer wieder über 0 gesetzt wird
+        const currentSecs = getCurrentSeconds();
+        if (currentSecs > 0) {
+          alertedStages.zero = false;
+          alertedStages.minus5 = false;
+          alertedStages.minus10 = false;
+        }
+
+        isInitialLoad = false;
         updateDisplay();
+        
         syncStatus.textContent = "● Live synchronisiert";
         syncStatus.style.color = "#4CAF50";
       } else if (isAdmin) {
-        pushState(1800, false);
+        pushState(false, 0, 1800);
       }
     }, (error) => {
       console.error("Firebase Datenbank-Fehler:", error);
@@ -212,65 +237,116 @@
       syncStatus.style.color = "#f44336";
     });
 
-    // Zustand an den Firebase-Server senden (Nur Admin)
-    function pushState(newTime, isRunningState) {
+    function pushState(runningState, target, duration) {
       if (!isAdmin) return;
       db.set({
-        timeLeft: newTime,
-        isRunning: isRunningState,
+        isRunning: runningState,
+        targetTime: target,
+        durationLeft: duration,
         updatedAt: Date.now()
       }).catch(err => console.error("Schreibfehler:", err));
     }
 
-    // 3. TIMER LOGIK & VISUELLE EFFEKTE
+    // Berechnet die verbleibende Zeit in Sekunden absolut genau
+    function getCurrentSeconds() {
+      if (isRunning) {
+        return Math.round((targetTime - Date.now()) / 1000);
+      }
+      return durationLeft;
+    }
+
+    // 3. TIMER DISPLAY & ALARM STUFEN
     function updateDisplay() {
-      const isNegative = localTimeLeft < 0;
-      const absSeconds = Math.abs(localTimeLeft);
-      const mins = Math.floor(absSeconds / 60);
-      const secs = absSeconds % 60;
+      let secs = getCurrentSeconds();
+
+      // Maximales Limit für Minus-Lauf auf -10 Minuten (-600 Sekunden) festlegen
+      if (secs < -600) {
+        secs = -600;
+        if (isRunning && isAdmin) {
+          // Automatisch stoppen bei -10 Minuten
+          pushState(false, 0, -600);
+        }
+      }
+
+      lastDurationLeft = secs;
+
+      const isNegative = secs < 0;
+      const absSeconds = Math.abs(secs);
+      const displayMins = Math.floor(absSeconds / 60);
+      const displaySecs = absSeconds % 60;
       
       timerElement.textContent = 
-        `${isNegative ? '-' : ''}${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        `${isNegative ? '-' : ''}${displayMins.toString().padStart(2, '0')}:${displaySecs.toString().padStart(2, '0')}`;
 
+      // Farblogik
       document.body.classList.remove('warning', 'expired');
-      
-      if (localTimeLeft <= 0) {
+      if (secs <= 0) {
         document.body.classList.add('expired');
-        if (!hasAlertedExpired) {
-          playAlarmSound();
-          hasAlertedExpired = true;
-        }
-      } else {
-        hasAlertedExpired = false;
-        if (localTimeLeft <= 120) {
-          document.body.classList.add('warning');
-        }
+      } else if (secs <= 120) {
+        document.body.classList.add('warning');
+      }
+
+      // Alarm Stufen prüfen
+      if (secs <= 0 && !alertedStages.zero) {
+        playAlarmSound();
+        alertedStages.zero = true;
+      }
+      if (secs <= -300 && !alertedStages.minus5) { // -5 Minuten
+        playAlarmSound();
+        alertedStages.minus5 = true;
+      }
+      if (secs <= -600 && !alertedStages.minus10) { // -10 Minuten
+        playAlarmSound();
+        alertedStages.minus10 = true;
       }
     }
 
-    // Taktgeber: Der Admin treibt die Zeit auf dem Server an
-    setInterval(() => {
-      if (isAdmin && localIsRunning) {
-        localTimeLeft--;
-        pushState(localTimeLeft, true);
-      }
-    }, 1000);
+    // Kontinuierliche Display-Aktualisierung (jede Sekunde)
+    setInterval(updateDisplay, 1000);
 
     // 4. BEDIENUNG (ADMIN)
-    function changeTime(sec) {
-      localTimeLeft = Math.max(0, localTimeLeft + sec);
-      pushState(localTimeLeft, localIsRunning);
+    function startTimer() {
+      if (isRunning) return;
+      let currentSecs = getCurrentSeconds();
+      if (currentSecs <= -600) currentSecs = 1800; // Reset falls bei -10min abgelaufen
+      
+      const newTarget = Date.now() + (currentSecs * 1000);
+      pushState(true, newTarget, currentSecs);
     }
 
-    function startTimer() { pushState(localTimeLeft, true); }
-    function pauseTimer() { pushState(localTimeLeft, false); }
+    function pauseTimer() {
+      if (!isRunning) return;
+      const currentSecs = getCurrentSeconds();
+      pushState(false, 0, currentSecs);
+    }
+
+    function changeTime(sec) {
+      let currentSecs = getCurrentSeconds();
+      let newSecs = currentSecs + sec;
+      
+      triggerFlash(); // Visuelles Feedback am Admin-Gerät
+      
+      if (isRunning) {
+        const newTarget = Date.now() + (newSecs * 1000);
+        pushState(true, newTarget, newSecs);
+      } else {
+        pushState(false, 0, newSecs);
+      }
+    }
 
     function manualEdit() {
       if (!isAdmin) return;
-      const input = prompt("Neue Zeit in Minuten eingeben:", Math.floor(localTimeLeft / 60));
+      const currentSecs = getCurrentSeconds();
+      const input = prompt("Neue Zeit in Minuten eingeben:", Math.floor(currentSecs / 60));
       if (input !== null && !isNaN(input) && input.trim() !== "") {
-        localTimeLeft = Math.max(0, parseInt(input, 10) * 60);
-        pushState(localTimeLeft, localIsRunning);
+        const newSecs = parseInt(input, 10) * 60;
+        triggerFlash();
+        if (isRunning) {
+          const newTarget = Date.now() + (newSecs * 1000);
+          pushState(true, newTarget, newSecs);
+        } else {
+          pushState(false, 0, newSecs);
+        }
       }
     }
 
