@@ -181,9 +181,9 @@
   <!-- 3. LIVE STATUS -->
   <div id="sync-status" class="status-text hidden">Verbinde mit Server...</div>
 
-  <!-- 4. WACHHALTEN BUTTON (NUR NUTZER) -->
+  <!-- 4. WACHHALTEN & SOUND BUTTON (NUR NUTZER) -->
   <div id="user-wake-lock" class="controls hidden">
-    <button id="wake-lock-button" type="button" onclick="toggleWakeLock()">Bildschirm wach halten</button>
+    <button id="wake-lock-button" type="button" onclick="enableUserAudioAndWakeLock()">Ton & Bildschirm aktivieren</button>
   </div>
 
   <!-- 5. BEDIENUNG ADMIN (START/PAUSE TOGGLE & RESET + ZEIT-BUTTONS) -->
@@ -250,21 +250,48 @@
     const playIcon = document.getElementById('play-icon');
     const pauseIcon = document.getElementById('pause-icon');
 
-    // AUDIO SYSTEM FOR NATIVE / MOBILE BROWSERS
-    const alarmAudio = new Audio('alarm.mp3');
-    let audioUnlocked = false;
+    // WEB AUDIO API SYSTEM (LAUTLOSES FREISCHALTEN)
+    let audioContext = null;
+    let isAudioUnlocked = false;
 
-    function unlockAudio() {
-      if (audioUnlocked) return;
-      alarmAudio.play().then(() => {
-        alarmAudio.pause();
-        alarmAudio.currentTime = 0;
-        audioUnlocked = true;
-      }).catch(() => {});
+    function unlockAudioSilent() {
+      if (isAudioUnlocked) return;
+
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+          audioContext = new AudioCtx();
+          
+          // Erzeugt einen unhörbaren 0Hz Puffer für 0.1 Sekunden
+          const buffer = audioContext.createBuffer(1, 1, 22050);
+          const source = audioContext.createBufferSource();
+          source.buffer = buffer;
+          source.connect(audioContext.destination);
+          source.start(0);
+
+          if (audioContext.state === 'suspended') {
+            audioContext.resume();
+          }
+        }
+        isAudioUnlocked = true;
+        console.log("Audio-Hardware lautlos entsperrt!");
+      } catch (e) {
+        console.log("Fehler beim Freischalten der Audio-Hardware:", e);
+      }
     }
 
-    // Beim ersten Tippen auf das Display schalten wir Audio frei (Nutzer & Admin)
-    document.addEventListener('pointerdown', unlockAudio, { once: true });
+    function playAlarmSound() {
+      // Immer eine frische Audio-Instanz für garantierte Wiedergabe erzeugen
+      const alarm = new Audio('alarm.mp3');
+      
+      if (audioContext && audioContext.state === 'suspended') {
+        audioContext.resume();
+      }
+
+      alarm.play().catch(e => {
+        console.log("Audio-Wiedergabe vom Browser blockiert:", e);
+      });
+    }
 
     // TIMER VARIABLEN
     let db = null;
@@ -451,12 +478,11 @@
 
     // E. BEDIENUNG (ADMIN)
     function togglePlayPause() {
+      unlockAudioSilent();
       if (isRunning) {
-        // Pausieren
         const currentSecs = getCurrentSeconds();
         pushState(false, 0, currentSecs);
       } else {
-        // Starten
         let currentSecs = getCurrentSeconds();
         const newTarget = Date.now() + (currentSecs * 1000);
         pushState(true, newTarget, currentSecs);
@@ -465,12 +491,14 @@
 
     function resetToDefaultTime() {
       if (!isAdmin) return;
+      unlockAudioSilent();
       pushState(false, 0, defaultDuration, defaultDuration);
       alertedStages.zero = false;
       alertedStages.minus5 = false;
     }
 
     function changeTime(sec) {
+      unlockAudioSilent();
       let currentSecs = getCurrentSeconds();
       let newSecs = currentSecs + sec;
       
@@ -486,6 +514,7 @@
 
     function manualEdit() {
       if (!isAdmin) return;
+      unlockAudioSilent();
       const currentSecs = getCurrentSeconds();
       const input = prompt("Neue Zeit in Minuten eingeben:", Math.floor(currentSecs / 60));
       if (input !== null && !isNaN(input) && input.trim() !== "") {
@@ -503,13 +532,6 @@
     function triggerFlash() {
       document.body.classList.add('flash');
       setTimeout(() => document.body.classList.remove('flash'), 500);
-    }
-
-    function playAlarmSound() {
-      alarmAudio.currentTime = 0;
-      alarmAudio.play().catch(e => {
-        console.log("Audio-Wiedergabe vom Browser blockiert:", e);
-      });
     }
 
     // F. HELFER (QR-Code, Wachhalten & Verstecktes Eruda)
@@ -563,6 +585,7 @@
     // WAKE LOCK INTERAKTIV FÜR ADMIN
     function enableAdminInteractiveWakeLock() {
       const requestLock = async () => {
+        unlockAudioSilent();
         if (!wakeLock) {
           try {
             wakeLock = await navigator.wakeLock.request('screen');
@@ -583,21 +606,24 @@
       });
     }
 
-    // WAKE LOCK MANUAL FÜR NUTZER (Button-Steuerung)
-    async function toggleWakeLock() {
+    // NUTZER-BUTTON: LAUTLOSES FREISCHALTEN UND BILDSHIRM WACHHALTEN
+    async function enableUserAudioAndWakeLock() {
+      unlockAudioSilent();
+      
       const btn = document.getElementById('wake-lock-button');
       if (!wakeLock) {
         try {
           wakeLock = await navigator.wakeLock.request('screen');
-          btn.textContent = "Bildschirm bleibt an (Aktiv)";
+          btn.textContent = "Ton & Bildschirm aktiv ✓";
           btn.style.backgroundColor = "#1b5e20";
         } catch (e) {
-          alert("Bildschirm wach halten wird nicht unterstützt.");
+          btn.textContent = "Ton aktiv ✓ (Bildschirm-Lock nicht unterstützt)";
+          btn.style.backgroundColor = "#1b5e20";
         }
       } else {
         await wakeLock.release();
         wakeLock = null;
-        btn.textContent = "Bildschirm wach halten";
+        btn.textContent = "Ton & Bildschirm aktivieren";
         btn.style.backgroundColor = "#222";
       }
     }
