@@ -74,10 +74,21 @@
       cursor: pointer;
       flex: 1;
       border: 1px solid #444;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     button:active { background-color: #444; }
 
     .btn-action { background-color: #2e6da4; border-color: #357ebd; }
+    .btn-reset { background-color: #333; border-color: #555; }
+    .btn-reset:active { background-color: #555; }
+
+    .icon-svg {
+      width: 24px;
+      height: 24px;
+      fill: currentColor;
+    }
     
     .qr-panel {
       display: flex;
@@ -175,11 +186,21 @@
     <button id="wake-lock-button" type="button" onclick="toggleWakeLock()">Bildschirm wach halten</button>
   </div>
 
-  <!-- 5. BEDIENUNG ADMIN (START/PAUSE & ZEIT-BUTTONS) -->
+  <!-- 5. BEDIENUNG ADMIN (START/PAUSE TOGGLE & RESET + ZEIT-BUTTONS) -->
   <div id="admin-controls" class="controls hidden">
     <div class="btn-group">
-      <button class="btn-action" onclick="startTimer()">Start</button>
-      <button class="btn-action" onclick="pauseTimer()">Pause</button>
+      <!-- Toggle Button (Play/Pause Icon) -->
+      <button id="toggle-btn" class="btn-action" onclick="togglePlayPause()" aria-label="Start/Pause">
+        <!-- Play Icon (Standard) -->
+        <svg id="play-icon" class="icon-svg" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+        <!-- Pause Icon -->
+        <svg id="pause-icon" class="icon-svg hidden" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+      </button>
+
+      <!-- Reset Button -->
+      <button class="btn-reset" onclick="resetToDefaultTime()" aria-label="Reset">
+        <svg class="icon-svg" viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>
+      </button>
     </div>
     <div class="btn-group">
       <button onclick="changeTime(30)">+30 s</button>
@@ -219,20 +240,38 @@
     const roomName = urlParams.get('room');
     const isAdmin = urlParams.get('role') === 'admin';
 
-    // UI ELEMNETE
+    // UI ELEMENTE
     const lobbyView = document.getElementById('lobby-view');
     const adminQrPanel = document.getElementById('admin-qr-panel');
     const timerElement = document.getElementById('timer');
     const syncStatus = document.getElementById('sync-status');
     const userWakeLock = document.getElementById('user-wake-lock');
     const adminControls = document.getElementById('admin-controls');
+    const playIcon = document.getElementById('play-icon');
+    const pauseIcon = document.getElementById('pause-icon');
+
+    // AUDIO SYSTEM FOR NATIVE / MOBILE BROWSERS
+    const alarmAudio = new Audio('alarm.mp3');
+    let audioUnlocked = false;
+
+    function unlockAudio() {
+      if (audioUnlocked) return;
+      alarmAudio.play().then(() => {
+        alarmAudio.pause();
+        alarmAudio.currentTime = 0;
+        audioUnlocked = true;
+      }).catch(() => {});
+    }
+
+    // Beim ersten Tippen auf das Display schalten wir Audio frei (Nutzer & Admin)
+    document.addEventListener('pointerdown', unlockAudio, { once: true });
 
     // TIMER VARIABLEN
     let db = null;
     let isRunning = false;
     let targetTime = 0;
     let durationLeft = 1800;
-    let defaultDuration = 1800; // Standard oder vom Admin gewählte Startzeit in s
+    let defaultDuration = 1800;
     
     let isInitialLoad = true;
     let lastDurationLeft = 1800;
@@ -246,10 +285,8 @@
 
     // A. PRÜFEN: SIND WIR IN EINEM RAUM ODER AUF DER STARTSEITE?
     if (!roomName) {
-      // Startseite anzeigen
       lobbyView.classList.remove('hidden');
     } else {
-      // Timer Ansicht laden
       db = firebase.database().ref("timer_state/" + roomName);
       
       timerElement.classList.remove('hidden');
@@ -285,7 +322,6 @@
 
       const initialSeconds = (!isNaN(timeInput) && timeInput > 0) ? timeInput * 60 : 1800;
 
-      // Raum in Firebase anlegen
       const newDb = firebase.database().ref("timer_state/" + nameInput);
       newDb.set({
         isRunning: false,
@@ -294,7 +330,6 @@
         defaultDuration: initialSeconds,
         updatedAt: Date.now()
       }).then(() => {
-        // Weiterleitung auf die Admin-Seite
         window.location.href = `?room=${nameInput}&role=admin`;
       }).catch(err => {
         console.error("Fehler beim Erstellen:", err);
@@ -307,7 +342,6 @@
       db.on('value', (snapshot) => {
         const data = snapshot.val();
         if (data) {
-          // Prüfen ob Zeit manuell/über Buttons geändert wurde
           if (!isInitialLoad) {
             const expectedRemaining = data.isRunning ? Math.round((data.targetTime - Date.now()) / 1000) : data.durationLeft;
             if (Math.abs(expectedRemaining - lastDurationLeft) > 1) {
@@ -320,6 +354,15 @@
           durationLeft = data.durationLeft !== undefined ? data.durationLeft : 1800;
           defaultDuration = data.defaultDuration !== undefined ? data.defaultDuration : 1800;
           
+          // Toggle Buttons synchronisieren (Play vs. Pause)
+          if (isRunning) {
+            playIcon.classList.add('hidden');
+            pauseIcon.classList.remove('hidden');
+          } else {
+            playIcon.classList.remove('hidden');
+            pauseIcon.classList.add('hidden');
+          }
+
           // Alarme zurücksetzen
           const currentSecs = getCurrentSeconds();
           if (currentSecs > 0) {
@@ -365,7 +408,7 @@
       if (!roomName) return;
       let secs = getCurrentSeconds();
 
-      // Automatischer Reset bei -10 Minuten auf die gewählte Startzeit
+      // Automatischer Reset bei -10 Minuten
       if (secs <= -600) {
         secs = defaultDuration;
         alertedStages.zero = false;
@@ -407,17 +450,24 @@
     setInterval(updateDisplay, 1000);
 
     // E. BEDIENUNG (ADMIN)
-    function startTimer() {
-      if (isRunning) return;
-      let currentSecs = getCurrentSeconds();
-      const newTarget = Date.now() + (currentSecs * 1000);
-      pushState(true, newTarget, currentSecs);
+    function togglePlayPause() {
+      if (isRunning) {
+        // Pausieren
+        const currentSecs = getCurrentSeconds();
+        pushState(false, 0, currentSecs);
+      } else {
+        // Starten
+        let currentSecs = getCurrentSeconds();
+        const newTarget = Date.now() + (currentSecs * 1000);
+        pushState(true, newTarget, currentSecs);
+      }
     }
 
-    function pauseTimer() {
-      if (!isRunning) return;
-      const currentSecs = getCurrentSeconds();
-      pushState(false, 0, currentSecs);
+    function resetToDefaultTime() {
+      if (!isAdmin) return;
+      pushState(false, 0, defaultDuration, defaultDuration);
+      alertedStages.zero = false;
+      alertedStages.minus5 = false;
     }
 
     function changeTime(sec) {
@@ -456,8 +506,8 @@
     }
 
     function playAlarmSound() {
-      const audio = new Audio('alarm.mp3');
-      audio.play().catch(e => {
+      alarmAudio.currentTime = 0;
+      alarmAudio.play().catch(e => {
         console.log("Audio-Wiedergabe vom Browser blockiert:", e);
       });
     }
@@ -510,7 +560,7 @@
       alert("Nutzer-Link in Zwischenablage kopiert!");
     }
 
-    // WAKE LOCK INTERAKTIV FÜR ADMIN (Aktivierung bei Berührung)
+    // WAKE LOCK INTERAKTIV FÜR ADMIN
     function enableAdminInteractiveWakeLock() {
       const requestLock = async () => {
         if (!wakeLock) {
@@ -522,15 +572,13 @@
         }
       };
 
-      // Bei der ersten Interaktion aktivieren
       document.addEventListener('pointerdown', requestLock, { once: true });
 
-      // Wenn aus einer anderen App zurückgekehrt wird, beim nächsten Tippen wieder aktivieren
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
           document.addEventListener('pointerdown', requestLock, { once: true });
         } else {
-          wakeLock = null; // Gibt die Sperre beim App-Wechsel frei
+          wakeLock = null;
         }
       });
     }
