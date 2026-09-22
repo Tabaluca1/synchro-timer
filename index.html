@@ -80,6 +80,13 @@
     }
     button:active { background-color: #444; }
 
+    #wake-lock-button {
+      width: 100%;
+      white-space: nowrap; /* Verhindert das Umbrechen in zwei Zeilen */
+      font-size: clamp(0.75rem, 3.5vw, 0.95rem); /* Dynamische Anpassung an die Displaybreite */
+      padding: 12px 10px;
+    }
+
     .btn-action { background-color: #2e6da4; border-color: #357ebd; }
     .btn-reset { background-color: #333; border-color: #555; }
     .btn-reset:active { background-color: #555; }
@@ -183,7 +190,7 @@
 
   <!-- 4. WACHHALTEN & SOUND BUTTON (NUR NUTZER) -->
   <div id="user-wake-lock" class="controls hidden">
-    <button id="wake-lock-button" type="button" onclick="enableUserAudioAndWakeLock()">Ton & Bildschirm aktivieren</button>
+    <button id="wake-lock-button" type="button" onclick="enableUserAudioAndWakeLock()">Ton & Bildschirm-Awake aktivieren</button>
   </div>
 
   <!-- 5. BEDIENUNG ADMIN (START/PAUSE TOGGLE & RESET + ZEIT-BUTTONS) -->
@@ -250,7 +257,7 @@
     const playIcon = document.getElementById('play-icon');
     const pauseIcon = document.getElementById('pause-icon');
 
-    // WEB AUDIO API SYSTEM (LAUTLOSES FREISCHALTEN)
+    // AUDIO SYSTEM (SPEZIELL FÜR IOS OPTIMIERT)
     let audioContext = null;
     let isAudioUnlocked = false;
 
@@ -262,10 +269,12 @@
         if (AudioCtx) {
           audioContext = new AudioCtx();
           
-          // Erzeugt einen unhörbaren 0Hz Puffer für 0.1 Sekunden
-          const buffer = audioContext.createBuffer(1, 1, 22050);
+          // iOS Trick: Erzeuge einen unendlichen, lautlosen Ton (0 Hz / Stille)
+          // Das hält die iOS Audio-Engine im Hintergrund dauerhaft aktiv.
+          const buffer = audioContext.createBuffer(1, 22050, 22050);
           const source = audioContext.createBufferSource();
           source.buffer = buffer;
+          source.loop = true;
           source.connect(audioContext.destination);
           source.start(0);
 
@@ -274,20 +283,20 @@
           }
         }
         isAudioUnlocked = true;
-        console.log("Audio-Hardware lautlos entsperrt!");
+        console.log("Audio-Hardware für iOS dauerhaft entsperrt!");
       } catch (e) {
         console.log("Fehler beim Freischalten der Audio-Hardware:", e);
       }
     }
 
     function playAlarmSound() {
-      // Immer eine frische Audio-Instanz für garantierte Wiedergabe erzeugen
-      const alarm = new Audio('alarm.mp3');
-      
+      // Wenn der AudioContext schläft (z.B. nach Inaktivität), wieder aufwecken
       if (audioContext && audioContext.state === 'suspended') {
         audioContext.resume();
       }
 
+      // MP3 abspielen
+      const alarm = new Audio('alarm.mp3');
       alarm.play().catch(e => {
         console.log("Audio-Wiedergabe vom Browser blockiert:", e);
       });
@@ -599,6 +608,9 @@
 
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
+          if (audioContext && audioContext.state === 'suspended') {
+            audioContext.resume();
+          }
           document.addEventListener('pointerdown', requestLock, { once: true });
         } else {
           wakeLock = null;
@@ -614,19 +626,12 @@
       if (!wakeLock) {
         try {
           wakeLock = await navigator.wakeLock.request('screen');
-          btn.textContent = "Ton & Bildschirm aktiv ✓";
+          btn.textContent = "Ton & Bildschirm-Awake aktiv ✓";
           btn.style.backgroundColor = "#1b5e20";
         } catch (e) {
-          btn.textContent = "Ton aktiv ✓ (Bildschirm-Lock nicht unterstützt)";
+          btn.textContent = "Ton & Bildschirm-Awake aktiv ✓";
           btn.style.backgroundColor = "#1b5e20";
         }
       } else {
         await wakeLock.release();
-        wakeLock = null;
-        btn.textContent = "Ton & Bildschirm aktivieren";
-        btn.style.backgroundColor = "#222";
-      }
-    }
-  </script>
-</body>
-</html>
+        wakeL
