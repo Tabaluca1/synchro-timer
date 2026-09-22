@@ -260,6 +260,7 @@
         adminControls.classList.remove('hidden');
         setupQRCode();
         setupSecretEruda();
+        enableAdminInteractiveWakeLock();
       } else {
         userWakeLock.classList.remove('hidden');
       }
@@ -509,6 +510,32 @@
       alert("Nutzer-Link in Zwischenablage kopiert!");
     }
 
+    // WAKE LOCK INTERAKTIV FÜR ADMIN (Aktivierung bei Berührung)
+    function enableAdminInteractiveWakeLock() {
+      const requestLock = async () => {
+        if (!wakeLock) {
+          try {
+            wakeLock = await navigator.wakeLock.request('screen');
+          } catch (e) {
+            console.log("Wake-Lock konnte nicht aktiviert werden:", e);
+          }
+        }
+      };
+
+      // Bei der ersten Interaktion aktivieren
+      document.addEventListener('pointerdown', requestLock, { once: true });
+
+      // Wenn aus einer anderen App zurückgekehrt wird, beim nächsten Tippen wieder aktivieren
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          document.addEventListener('pointerdown', requestLock, { once: true });
+        } else {
+          wakeLock = null; // Gibt die Sperre beim App-Wechsel frei
+        }
+      });
+    }
+
+    // WAKE LOCK MANUAL FÜR NUTZER (Button-Steuerung)
     async function toggleWakeLock() {
       const btn = document.getElementById('wake-lock-button');
       if (!wakeLock) {
