@@ -280,25 +280,12 @@
       setTimeout(() => document.body.classList.remove('flash'), 500);
     }
 
-    // Ton erzeugen (Ohne externe Datei)
+    // MP3-Ton abspielen
     function playAlarmSound() {
-      try {
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        
-        osc.type = 'sine';
-        osc.frequency.value = 880; // Tonhöhe (A5)
-        
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        
-        osc.start();
-        gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + 1.2);
-        osc.stop(audioCtx.currentTime + 1.2);
-      } catch(e) {
-        console.log("Audio-Wiedergabe blockiert oder nicht unterstützt.");
-      }
+      const audio = new Audio('alarm.mp3');
+      audio.play().catch(e => {
+        console.log("Audio-Wiedergabe vom Browser blockiert oder 'alarm.mp3' nicht gefunden:", e);
+      });
     }
 
     // 5. HELFER (QR-Code & Wachhalten)
