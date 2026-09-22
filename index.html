@@ -4,10 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Echtzeit Timer</title>
-  
-  <!-- Entwickler-Konsole für Smartphones (Eruda) -->
-  <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
-  <script>eruda.init();</script>
 
   <!-- QR-Code Bibliothek für den Browser -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -30,14 +26,14 @@
     /* Warnung bei unter 2 Minuten */
     body.warning { background-color: #d9381e; }
     
-    /* Wellenartiges/Sanftes Pulsieren nach Ablauf der Zeit */
+    /* Wellenartiges Pulsieren nach Ablauf der Zeit */
     body.expired {
       animation: pulseRed 2s infinite ease-in-out;
     }
 
     @keyframes pulseRed {
       0% { background-color: #000000; }
-      50% { background-color: #e61919; } /* Helleres Rot */
+      50% { background-color: #e61919; }
       100% { background-color: #000000; }
     }
 
@@ -50,7 +46,7 @@
     .timer-display {
       font-size: 5.5rem;
       font-weight: 800;
-      margin: 15px 0;
+      margin: 10px 0;
       cursor: pointer;
       user-select: none;
       font-variant-numeric: tabular-nums;
@@ -88,7 +84,7 @@
       flex-direction: column;
       align-items: center;
       gap: 8px;
-      margin: 15px 0;
+      margin-bottom: 10px;
       background: #111;
       padding: 12px;
       border-radius: 12px;
@@ -98,13 +94,39 @@
       padding: 8px;
       background: #fff;
       border-radius: 8px;
+      cursor: pointer;
+      user-select: none;
     }
 
     .status-text {
       font-size: 0.85rem;
       color: #aaa;
       text-align: center;
-      margin-top: 5px;
+      margin-bottom: 15px;
+    }
+
+    /* STARTSEITE / LOBBY STYLES */
+    .lobby-card {
+      background: #111;
+      padding: 24px;
+      border-radius: 16px;
+      border: 1px solid #333;
+      width: 100%;
+      max-width: 340px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .lobby-card h2 { font-size: 1.5rem; text-align: center; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-group label { font-size: 0.9rem; color: #ccc; font-weight: bold; }
+    .form-group input {
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #444;
+      background: #222;
+      color: #fff;
+      font-size: 1rem;
     }
 
     .hidden { display: none !important; }
@@ -112,8 +134,49 @@
 </head>
 <body>
 
-  <!-- Steuerung OBEN (Nur für Admin) -->
-  <div id="admin-top" class="controls hidden">
+  <!-- 0. LOBBY / STARTSEITE (Wenn kein Raum gewählt ist) -->
+  <div id="lobby-view" class="lobby-card hidden">
+    <h2>Echtzeit Timer</h2>
+    
+    <div id="lobby-step-1">
+      <button class="btn-action" style="width: 100%; margin-top: 10px;" onclick="showSetupForm()">Timer erstellen</button>
+    </div>
+
+    <div id="lobby-step-2" class="hidden">
+      <div class="form-group">
+        <label for="room-name-input">Timer benennen</label>
+        <input type="text" id="room-name-input" placeholder="z.B. countdown" autocomplete="off">
+      </div>
+      
+      <div class="form-group" style="margin-top: 10px;">
+        <label for="initial-time-input">Länge des Timers (Minuten)</label>
+        <input type="number" id="initial-time-input" value="30" min="1" max="999">
+      </div>
+
+      <button class="btn-action" style="width: 100%; margin-top: 15px;" onclick="createRoom()">Timer einrichten</button>
+    </div>
+  </div>
+
+  <!-- 1. QR-CODE BEREICH (NUR ADMIN) -->
+  <div id="admin-qr-panel" class="qr-panel hidden">
+    <div style="font-weight:bold; font-size:0.9rem;">QR-Code für Nutzer</div>
+    <div id="user-qr"></div>
+    <button onclick="copyUserLink()" style="font-size: 0.85rem; padding: 6px 10px;">Link kopieren</button>
+  </div>
+
+  <!-- 2. TIMER ANZEIGE -->
+  <div class="timer-display hidden" id="timer" onclick="manualEdit()">30:00</div>
+
+  <!-- 3. LIVE STATUS -->
+  <div id="sync-status" class="status-text hidden">Verbinde mit Server...</div>
+
+  <!-- 4. WACHHALTEN BUTTON (NUR NUTZER) -->
+  <div id="user-wake-lock" class="controls hidden">
+    <button id="wake-lock-button" type="button" onclick="toggleWakeLock()">Bildschirm wach halten</button>
+  </div>
+
+  <!-- 5. BEDIENUNG ADMIN (START/PAUSE & ZEIT-BUTTONS) -->
+  <div id="admin-controls" class="controls hidden">
     <div class="btn-group">
       <button class="btn-action" onclick="startTimer()">Start</button>
       <button class="btn-action" onclick="pauseTimer()">Pause</button>
@@ -122,29 +185,9 @@
       <button onclick="changeTime(30)">+30 s</button>
       <button onclick="changeTime(60)">+1 min</button>
     </div>
-  </div>
-
-  <!-- Timer Anzeige -->
-  <div class="timer-display" id="timer" onclick="manualEdit()">30:00</div>
-
-  <!-- Status & Wachhalten -->
-  <div class="controls">
-    <button id="wake-lock-button" type="button" onclick="toggleWakeLock()">Bildschirm wach halten</button>
-    <div id="sync-status" class="status-text">Verbinde mit Server...</div>
-  </div>
-
-  <!-- Steuerung UNTEN (Nur für Admin) -->
-  <div id="admin-bottom" class="controls hidden" style="margin-top: 15px;">
     <div class="btn-group">
       <button onclick="changeTime(-30)">-30 s</button>
       <button onclick="changeTime(-60)">-1 min</button>
-    </div>
-
-    <!-- QR Code Bereich für Admin -->
-    <div class="qr-panel">
-      <div style="font-weight:bold; font-size:0.9rem;">QR-Code für Nutzer</div>
-      <div id="user-qr"></div>
-      <button onclick="copyUserLink()" style="font-size: 0.85rem; padding: 6px 10px;">Link kopieren</button>
     </div>
   </div>
 
@@ -170,84 +213,145 @@
     } catch(e) {
       console.error("Firebase Init Fehler:", e);
     }
-    
-    const db = firebase.database().ref("timer_state");
 
-    const isAdmin = new URLSearchParams(window.location.search).get('role') === 'admin';
-    if (isAdmin) {
-      document.getElementById('admin-top').classList.remove('hidden');
-      document.getElementById('admin-bottom').classList.remove('hidden');
-      setupQRCode();
-    }
+    // URL-PARAMETER AUSLESEN
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomName = urlParams.get('room');
+    const isAdmin = urlParams.get('role') === 'admin';
 
-    // Timer Variablen
+    // UI ELEMNETE
+    const lobbyView = document.getElementById('lobby-view');
+    const adminQrPanel = document.getElementById('admin-qr-panel');
+    const timerElement = document.getElementById('timer');
+    const syncStatus = document.getElementById('sync-status');
+    const userWakeLock = document.getElementById('user-wake-lock');
+    const adminControls = document.getElementById('admin-controls');
+
+    // TIMER VARIABLEN
+    let db = null;
     let isRunning = false;
-    let targetTime = 0;       // Timestamp in ms, wann Timer bei 00:00 ankommt
-    let durationLeft = 1800;  // Verbleibende Sekunden bei Pause (Standard 30 min)
+    let targetTime = 0;
+    let durationLeft = 1800;
+    let defaultDuration = 1800; // Standard oder vom Admin gewählte Startzeit in s
     
     let isInitialLoad = true;
     let lastDurationLeft = 1800;
     
-    // Tracker für die 3 Alarm-Stufen
     let alertedStages = {
       zero: false,
-      minus5: false,
-      minus10: false
+      minus5: false
     };
 
     let wakeLock = null;
-    const timerElement = document.getElementById('timer');
-    const syncStatus = document.getElementById('sync-status');
 
-    // 2. ECHTZEIT-SYNCHRONISATION MIT SERVER
-    db.on('value', (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        // Prüfen ob Zeit manuell/über Buttons geändert wurde
-        if (!isInitialLoad) {
-          const expectedRemaining = data.isRunning ? Math.round((data.targetTime - Date.now()) / 1000) : data.durationLeft;
-          if (Math.abs(expectedRemaining - lastDurationLeft) > 1) {
-            triggerFlash();
-          }
-        }
-        
-        isRunning = data.isRunning;
-        targetTime = data.targetTime || 0;
-        durationLeft = data.durationLeft !== undefined ? data.durationLeft : 1800;
-        
-        // Alarme zurücksetzen, wenn der Timer wieder über 0 gesetzt wird
-        const currentSecs = getCurrentSeconds();
-        if (currentSecs > 0) {
-          alertedStages.zero = false;
-          alertedStages.minus5 = false;
-          alertedStages.minus10 = false;
-        }
+    // A. PRÜFEN: SIND WIR IN EINEM RAUM ODER AUF DER STARTSEITE?
+    if (!roomName) {
+      // Startseite anzeigen
+      lobbyView.classList.remove('hidden');
+    } else {
+      // Timer Ansicht laden
+      db = firebase.database().ref("timer_state/" + roomName);
+      
+      timerElement.classList.remove('hidden');
+      syncStatus.classList.remove('hidden');
 
-        isInitialLoad = false;
-        updateDisplay();
-        
-        syncStatus.textContent = "● Live synchronisiert";
-        syncStatus.style.color = "#4CAF50";
-      } else if (isAdmin) {
-        pushState(false, 0, 1800);
+      if (isAdmin) {
+        adminQrPanel.classList.remove('hidden');
+        adminControls.classList.remove('hidden');
+        setupQRCode();
+        setupSecretEruda();
+      } else {
+        userWakeLock.classList.remove('hidden');
       }
-    }, (error) => {
-      console.error("Firebase Datenbank-Fehler:", error);
-      syncStatus.textContent = "Verbindungsfehler (Regeln prüfen)";
-      syncStatus.style.color = "#f44336";
-    });
 
-    function pushState(runningState, target, duration) {
-      if (!isAdmin) return;
+      initTimerSync();
+    }
+
+    // B. STARTSEITEN-LOGIK
+    function showSetupForm() {
+      document.getElementById('lobby-step-1').classList.add('hidden');
+      document.getElementById('lobby-step-2').classList.remove('hidden');
+    }
+
+    function createRoom() {
+      const nameInput = document.getElementById('room-name-input').value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+      const timeInput = parseInt(document.getElementById('initial-time-input').value, 10);
+
+      if (!nameInput) {
+        alert("Bitte gib einen gültigen Namen für den Timer ein.");
+        return;
+      }
+
+      const initialSeconds = (!isNaN(timeInput) && timeInput > 0) ? timeInput * 60 : 1800;
+
+      // Raum in Firebase anlegen
+      const newDb = firebase.database().ref("timer_state/" + nameInput);
+      newDb.set({
+        isRunning: false,
+        targetTime: 0,
+        durationLeft: initialSeconds,
+        defaultDuration: initialSeconds,
+        updatedAt: Date.now()
+      }).then(() => {
+        // Weiterleitung auf die Admin-Seite
+        window.location.href = `?room=${nameInput}&role=admin`;
+      }).catch(err => {
+        console.error("Fehler beim Erstellen:", err);
+        alert("Fehler beim Erstellen des Timers.");
+      });
+    }
+
+    // C. ECHTZEIT-SYNCHRONISATION MIT SERVER
+    function initTimerSync() {
+      db.on('value', (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          // Prüfen ob Zeit manuell/über Buttons geändert wurde
+          if (!isInitialLoad) {
+            const expectedRemaining = data.isRunning ? Math.round((data.targetTime - Date.now()) / 1000) : data.durationLeft;
+            if (Math.abs(expectedRemaining - lastDurationLeft) > 1) {
+              triggerFlash();
+            }
+          }
+          
+          isRunning = data.isRunning;
+          targetTime = data.targetTime || 0;
+          durationLeft = data.durationLeft !== undefined ? data.durationLeft : 1800;
+          defaultDuration = data.defaultDuration !== undefined ? data.defaultDuration : 1800;
+          
+          // Alarme zurücksetzen
+          const currentSecs = getCurrentSeconds();
+          if (currentSecs > 0) {
+            alertedStages.zero = false;
+            alertedStages.minus5 = false;
+          }
+
+          isInitialLoad = false;
+          updateDisplay();
+          
+          syncStatus.textContent = "● Live synchronisiert";
+          syncStatus.style.color = "#4CAF50";
+        } else if (isAdmin) {
+          pushState(false, 0, 1800, 1800);
+        }
+      }, (error) => {
+        console.error("Firebase Datenbank-Fehler:", error);
+        syncStatus.textContent = "Verbindungsfehler";
+        syncStatus.style.color = "#f44336";
+      });
+    }
+
+    function pushState(runningState, target, duration, defDur) {
+      if (!isAdmin || !db) return;
       db.set({
         isRunning: runningState,
         targetTime: target,
         durationLeft: duration,
+        defaultDuration: defDur !== undefined ? defDur : defaultDuration,
         updatedAt: Date.now()
       }).catch(err => console.error("Schreibfehler:", err));
     }
 
-    // Berechnet die verbleibende Zeit in Sekunden absolut genau
     function getCurrentSeconds() {
       if (isRunning) {
         return Math.round((targetTime - Date.now()) / 1000);
@@ -255,16 +359,18 @@
       return durationLeft;
     }
 
-    // 3. TIMER DISPLAY & ALARM STUFEN
+    // D. TIMER DISPLAY & RESET BEI -10 MINUTEN
     function updateDisplay() {
+      if (!roomName) return;
       let secs = getCurrentSeconds();
 
-      // Maximales Limit für Minus-Lauf auf -10 Minuten (-600 Sekunden) festlegen
-      if (secs < -600) {
-        secs = -600;
-        if (isRunning && isAdmin) {
-          // Automatisch stoppen bei -10 Minuten
-          pushState(false, 0, -600);
+      // Automatischer Reset bei -10 Minuten auf die gewählte Startzeit
+      if (secs <= -600) {
+        secs = defaultDuration;
+        alertedStages.zero = false;
+        alertedStages.minus5 = false;
+        if (isAdmin) {
+          pushState(false, 0, defaultDuration, defaultDuration);
         }
       }
 
@@ -286,30 +392,23 @@
         document.body.classList.add('warning');
       }
 
-      // Alarm Stufen prüfen
+      // Alarm Stufen
       if (secs <= 0 && !alertedStages.zero) {
         playAlarmSound();
         alertedStages.zero = true;
       }
-      if (secs <= -300 && !alertedStages.minus5) { // -5 Minuten
+      if (secs <= -300 && !alertedStages.minus5) {
         playAlarmSound();
         alertedStages.minus5 = true;
       }
-      if (secs <= -600 && !alertedStages.minus10) { // -10 Minuten
-        playAlarmSound();
-        alertedStages.minus10 = true;
-      }
     }
 
-    // Kontinuierliche Display-Aktualisierung (jede Sekunde)
     setInterval(updateDisplay, 1000);
 
-    // 4. BEDIENUNG (ADMIN)
+    // E. BEDIENUNG (ADMIN)
     function startTimer() {
       if (isRunning) return;
       let currentSecs = getCurrentSeconds();
-      if (currentSecs <= -600) currentSecs = 1800; // Reset falls bei -10min abgelaufen
-      
       const newTarget = Date.now() + (currentSecs * 1000);
       pushState(true, newTarget, currentSecs);
     }
@@ -324,7 +423,7 @@
       let currentSecs = getCurrentSeconds();
       let newSecs = currentSecs + sec;
       
-      triggerFlash(); // Visuelles Feedback am Admin-Gerät
+      triggerFlash();
       
       if (isRunning) {
         const newTarget = Date.now() + (newSecs * 1000);
@@ -350,33 +449,63 @@
       }
     }
 
-    // Blauer Blitz bei Zeitänderung
     function triggerFlash() {
       document.body.classList.add('flash');
       setTimeout(() => document.body.classList.remove('flash'), 500);
     }
 
-    // MP3-Ton abspielen
     function playAlarmSound() {
       const audio = new Audio('alarm.mp3');
       audio.play().catch(e => {
-        console.log("Audio-Wiedergabe vom Browser blockiert oder 'alarm.mp3' nicht gefunden:", e);
+        console.log("Audio-Wiedergabe vom Browser blockiert:", e);
       });
     }
 
-    // 5. HELFER (QR-Code & Wachhalten)
+    // F. HELFER (QR-Code, Wachhalten & Verstecktes Eruda)
+    function getUserUrl() {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('role');
+      return url.toString();
+    }
+
     function setupQRCode() {
-      const userUrl = window.location.href.replace('?role=admin', '').replace('&role=admin', '');
       new QRCode(document.getElementById("user-qr"), {
-        text: userUrl,
+        text: getUserUrl(),
         width: 160,
         height: 160
       });
     }
 
+    function setupSecretEruda() {
+      const qrElem = document.getElementById("user-qr");
+      let tapCount = 0;
+      let tapTimer = null;
+
+      qrElem.addEventListener('click', () => {
+        tapCount++;
+        clearTimeout(tapTimer);
+
+        if (tapCount === 3) {
+          tapCount = 0;
+          if (window.eruda) {
+            window.eruda.show();
+          } else {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/eruda';
+            script.onload = () => {
+              window.eruda.init();
+              window.eruda.show();
+            };
+            document.body.appendChild(script);
+          }
+        } else {
+          tapTimer = setTimeout(() => { tapCount = 0; }, 1000);
+        }
+      });
+    }
+
     function copyUserLink() {
-      const userUrl = window.location.href.replace('?role=admin', '').replace('&role=admin', '');
-      navigator.clipboard.writeText(userUrl);
+      navigator.clipboard.writeText(getUserUrl());
       alert("Nutzer-Link in Zwischenablage kopiert!");
     }
 
