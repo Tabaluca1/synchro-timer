@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Echtzeit Timer</title>
+  
+  <!-- QR-Code Bibliothek für den Browser -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background-color: #000;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      transition: background-color 0.5s ease;
+      padding: 20px;
+    }
+    
+    body.warning { background-color: #b30000; }
+    body.expired { background-color: #5c0000; }
+    body.flash { background-color: #2a52be; }
+
+    .timer-display {
+      font-size: 5.5rem;
+      font-weight: 800;
+      margin: 15px 0;
+      cursor: pointer;
+      user-select: none;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      align-items: center;
+      width: 100%;
+      max-width: 320px;
+    }
+
+    .btn-group { display: flex; gap: 10px; width: 100%; justify-content: center; }
+
+    button {
+      padding: 12px 18px;
+      font-size: 1.1rem;
+      font-weight: bold;
+      border: none;
+      border-radius: 8px;
+      background-color: #222;
+      color: #fff;
+      cursor: pointer;
+      flex: 1;
+      border: 1px solid #444;
+    }
+    button:active { background-color: #444; }
+
+    .btn-action { background-color: #2e6da4; border-color: #357ebd; }
+    
+    .qr-panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      margin: 15px 0;
+      background: #111;
+      padding: 12px;
+      border-radius: 12px;
+    }
+
+    #user-qr {
+      padding: 8px;
+      background: #fff;
+      border-radius: 8px;
+    }
+
+    .status-text {
+      font-size: 0.85rem;
+      color: #aaa;
+      text-align: center;
+      margin-top: 5px;
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <!-- Steuerung OBEN (Nur für E) -->
+  <div id="admin-top" class="controls hidden">
+    <div class="btn-group">
+      <button class="btn-action" onclick="startTimer()">Start</button>
+      <button class="btn-action" onclick="pauseTimer()">Pause</button>
+    </div>
+    <div class="btn-group">
+      <button onclick="changeTime(30)">+30 s</button>
+      <button onclick="changeTime(60)">+1 min</button>
+    </div>
+  </div>
+
+  <!-- Timer Anzeige -->
+  <div class="timer-display" id="timer" onclick="manualEdit()">10:00</div>
+
+  <!-- Status & Wachhalten -->
+  <div class="controls">
+    <button id="wake-lock-button" type="button" onclick="toggleWakeLock()">Bildschirm wach halten</button>
+    <div id="sync-status" class="status-text">Verbinde mit Server...</div>
+  </div>
+
+  <!-- Steuerung UNTEN (Nur für E) -->
+  <div id="admin-bottom" class="controls hidden" style="margin-top: 15px;">
+    <div class="btn-group">
+      <button onclick="changeTime(-30)">-30 s</button>
+      <button onclick="changeTime(-60)">-1 min</button>
+    </div>
+
+    <!-- QR Code Bereich für Admin -->
+    <div class="qr-panel">
+      <div style="font-weight:bold; font-size:0.9rem;">QR-Code für Nutzer</div>
+      <div id="user-qr"></div>
+      <button onclick="copyUserLink()" style="font-size: 0.85rem; padding: 6px 10px;">Link kopieren</button>
+    </div>
+  </div>
+
+  <!-- Firebase SDKs einbinden -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+  <script>
+    // 1. DEINE FIREBASE KONFIGURATION
+    const firebaseConfig = {
+      apiKey: "AIzaSyBZ8TNHdABZ9YEl84jAltPC5_iEbZMYnB0",
+      authDomain: "synchro-timer1.firebaseapp.com",
+      databaseURL: "https://synchro-timer1-default-rtdb.firebaseio.com",
+      projectId: "synchro-timer1",
+      storageBucket: "synchro-timer1.firebasestorage.app",
+      messagingSenderId: "681266055522",
+      appId: "1:681266055522:web:5afc74a55e4710d340443b",
+      measurementId: "G-W82QS25S5W"
+    };
+
+    // Firebase initialisieren
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database().ref("timer_state");
+
+    // Rolle prüfen
+    const isAdmin = new URLSearchParams(window.location.search).get('role') === 'admin';
+    if (isAdmin) {
+      document.getElementById('admin-top').classList.remove('hidden');
+      document.getElementById('admin-bottom').classList.remove('hidden');
+      setupQRCode();
+    }
+
+    let localTimeLeft = 600;
+    let localIsRunning = false;
+    let wakeLock = null;
+
+    const timerElement = document.getElementById('timer');
+    const syncStatus = document.getElementById('sync-status');
+
+    // 2. ECHTZEIT-SYNCHRONISATION MIT SERVER
+    db.on('value', (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        if (data.timeLeft !== localTimeLeft) {
+          triggerFlash();
+        }
+        localTimeLeft = data.timeLeft;
+        localIsRunning = data.isRunning;
+        updateDisplay();
+        syncStatus.textContent = "● Live synchronisiert";
+        syncStatus.style.color = "#4CAF50";
+      } else if (isAdmin) {
+        pushState(600, false);
+      }
+    });
+
+    // Zustand an den Firebase-Server senden (Nur Admin)
+    function pushState(newTime, isRunningState) {
+      if (!isAdmin) return;
+      db.set({
+        timeLeft: newTime,
+        isRunning: isRunningState,
+        updatedAt: Date.now()
+      });
+    }
+
+    // 3. TIMER LOGIK
+    function updateDisplay() {
+      const isNegative = localTimeLeft < 0;
+      const absSeconds = Math.abs(localTimeLeft);
+      const mins = Math.floor(absSeconds / 60);
+      const secs = absSeconds % 60;
+      
+      timerElement.textContent = 
+        `${isNegative ? '-' : ''}${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+
+      document.body.classList.remove('warning', 'expired');
+      if (localTimeLeft <= 0) {
+        document.body.classList.add('expired');
+      } else if (localTimeLeft <= 120) {
+        document.body.classList.add('warning');
+      }
+    }
+
+    // Taktgeber: Der Admin treibt die Zeit auf dem Server an
+    setInterval(() => {
+      if (isAdmin && localIsRunning) {
+        localTimeLeft--;
+        pushState(localTimeLeft, true);
+      }
+    }, 1000);
+
+    // 4. BEDIENUNG (ADMIN)
+    function changeTime(sec) {
+      localTimeLeft = Math.max(0, localTimeLeft + sec);
+      pushState(localTimeLeft, localIsRunning);
+    }
+
+    function startTimer() { pushState(localTimeLeft, true); }
+    function pauseTimer() { pushState(localTimeLeft, false); }
+
+    function manualEdit() {
+      if (!isAdmin) return;
+      const input = prompt("Neue Zeit in Minuten eingeben:", Math.floor(localTimeLeft / 60));
+      if (input !== null && !isNaN(input) && input.trim() !== "") {
+        localTimeLeft = Math.max(0, parseInt(input, 10) * 60);
+        pushState(localTimeLeft, localIsRunning);
+      }
+    }
+
+    function triggerFlash() {
+      document.body.classList.add('flash');
+      setTimeout(() => document.body.classList.remove('flash'), 400);
+    }
+
+    // 5. HELFER (QR-Code & Wachhalten)
+    function setupQRCode() {
+      const userUrl = window.location.href.replace('?role=admin', '').replace('&role=admin', '');
+      new QRCode(document.getElementById("user-qr"), {
+        text: userUrl,
+        width: 160,
+        height: 160
+      });
+    }
+
+    function copyUserLink() {
+      const userUrl = window.location.href.replace('?role=admin', '').replace('&role=admin', '');
+      navigator.clipboard.writeText(userUrl);
+      alert("Nutzer-Link in Zwischenablage kopiert!");
+    }
+
+    async function toggleWakeLock() {
+      const btn = document.getElementById('wake-lock-button');
+      if (!wakeLock) {
+        try {
+          wakeLock = await navigator.wakeLock.request('screen');
+          btn.textContent = "Bildschirm bleibt an (Aktiv)";
+          btn.style.backgroundColor = "#1b5e20";
+        } catch (e) {
+          alert("Bildschirm wach halten wird nicht unterstützt.");
+        }
+      } else {
+        await wakeLock.release();
+        wakeLock = null;
+        btn.textContent = "Bildschirm wach halten";
+        btn.style.backgroundColor = "#222";
+      }
+    }
+  </script>
+</body>
+</html>
