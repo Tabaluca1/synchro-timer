@@ -257,30 +257,50 @@
     const playIcon = document.getElementById('play-icon');
     const pauseIcon = document.getElementById('pause-icon');
 
-    // AUDIO SYSTEM (SPEZIELL FÜR IOS OPTIMIERT)
-    let audioContext = null;
+    // ==========================================
+    // AUDIO SYSTEM (NEU: VOLLSTÄNDIG WEB AUDIO API)
+    // ==========================================
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    let audioContext = new AudioCtx();
     let isAudioUnlocked = false;
+    let alarmBuffer = null;
+
+    // Lade die Audio-Datei direkt beim Start (im Hintergrund)
+    async function preloadAlarmAudio() {
+      try {
+        const response = await fetch('alarm.mp3');
+        const arrayBuffer = await response.arrayBuffer();
+        audioContext.decodeAudioData(arrayBuffer, (buffer) => {
+          alarmBuffer = buffer;
+          console.log("Alarm-Audio erfolgreich im Hintergrund dekodiert.");
+        }, (e) => {
+          console.error("Fehler beim Dekodieren der Audio-Daten", e);
+        });
+      } catch (err) {
+        console.error("Fehler beim Laden von alarm.mp3", err);
+      }
+    }
+    
+    // Starte den Download sofort
+    preloadAlarmAudio();
 
     function unlockAudioSilent() {
       if (isAudioUnlocked) return;
 
       try {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (AudioCtx) {
-          audioContext = new AudioCtx();
-          
-          // iOS Trick: Erzeuge einen unendlichen, lautlosen Ton (0 Hz / Stille)
-          const buffer = audioContext.createBuffer(1, 22050, 22050);
-          const source = audioContext.createBufferSource();
-          source.buffer = buffer;
-          source.loop = true;
-          source.connect(audioContext.destination);
-          source.start(0);
+        // iOS Trick: Erzeuge einen unendlichen, lautlosen Ton (0 Hz / Stille)
+        // Dadurch bleibt das Audio-System wach und aktiv
+        const buffer = audioContext.createBuffer(1, 22050, 22050);
+        const source = audioContext.createBufferSource();
+        source.buffer = buffer;
+        source.loop = true;
+        source.connect(audioContext.destination);
+        source.start(0);
 
-          if (audioContext.state === 'suspended') {
-            audioContext.resume();
-          }
+        if (audioContext.state === 'suspended') {
+          audioContext.resume();
         }
+        
         isAudioUnlocked = true;
         console.log("Audio-Hardware für iOS dauerhaft entsperrt!");
       } catch (e) {
@@ -293,11 +313,24 @@
         audioContext.resume();
       }
 
-      const alarm = new Audio('alarm.mp3');
-      alarm.play().catch(e => {
-        console.log("Audio-Wiedergabe vom Browser blockiert:", e);
-      });
+      if (alarmBuffer) {
+        // Spiele den dekodierten Puffer direkt aus dem Speicher ab
+        const source = audioContext.createBufferSource();
+        source.buffer = alarmBuffer;
+        source.connect(audioContext.destination);
+        source.start(0);
+        console.log("Alarm via Web Audio API abgespielt.");
+      } else {
+        // Fallback: Falls die Datei noch nicht fertig geladen war
+        console.log("Fallback: HTML5 Audio wird genutzt.");
+        const alarm = new Audio('alarm.mp3');
+        alarm.play().catch(e => {
+          console.log("Audio-Wiedergabe vom Browser blockiert:", e);
+        });
+      }
     }
+    // ==========================================
+
 
     // TIMER VARIABLEN
     let db = null;
@@ -318,10 +351,8 @@
 
     // A. ANSICHT STEUERN: LOBBY ODER TIMER
     if (!roomName) {
-      // Wenn kein Raum in der URL definiert ist -> Lobby explizit einblenden
       lobbyView.classList.remove('hidden');
     } else {
-      // Wenn ein Raum in der URL existiert -> Lobby ausblenden & Timer-Räume aufbauen
       lobbyView.classList.add('hidden');
       db = firebase.database().ref("timer_state/" + roomName);
       
