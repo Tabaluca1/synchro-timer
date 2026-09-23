@@ -7,13 +7,13 @@
 
   <!-- QR-Code Bibliothek für den Browser -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<!-- Google Font: Roboto Mono laden -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700;800&display=swap" rel="stylesheet">
+  <!-- Google Font: Roboto Mono laden -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700;800&display=swap" rel="stylesheet">
 
   <style>
-      /* =========================================
+    /* =========================================
        1. GRUND-LAYOUT & GLOBALE STYLES
        ========================================= */
     * { 
@@ -56,7 +56,7 @@
       margin: 10px 0;
       cursor: pointer;
       user-select: none;
-      font-variant-numeric: tabular-nums; /* Sorgt dafür, dass Zahlen nicht "wackeln" */
+      font-variant-numeric: tabular-nums;
     }
 
     .status-text {
@@ -222,7 +222,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
   <script>
-    "use strict"; // Sorgt für striktere Fehlerprüfung im Code
+    "use strict";
 
     /* ========================================================================
        1. SETUP & VARIABLEN
@@ -259,6 +259,7 @@
     let dbRef = null;
     let wakeLock = null;
     let displayInterval = null;
+    let isUserAudioEnabled = false; // Speichert den Audio-Zustand für normale Nutzer
 
     // Timer State
     const state = {
@@ -282,7 +283,6 @@
     let isAudioUnlocked = false;
     let alarmBuffer = null;
 
-    // Hintergrund-Download der MP3
     fetch('alarm.mp3')
       .then(res => res.arrayBuffer())
       .then(buffer => audioContext.decodeAudioData(buffer))
@@ -307,6 +307,9 @@
     }
 
     function playAlarmSound() {
+      // Wenn normaler Nutzer und der Ton deaktiviert ist -> Stumm bleiben
+      if (!isAdmin && !isUserAudioEnabled) return;
+
       if (audioContext.state === 'suspended') audioContext.resume();
       
       if (alarmBuffer) {
@@ -315,7 +318,6 @@
         source.connect(audioContext.destination);
         source.start(0);
       } else {
-        // Fallback, falls Fetch fehlschlug oder extrem langsam war
         new Audio('alarm.mp3').play().catch(() => {});
       }
     }
@@ -327,7 +329,6 @@
     if (!roomName) {
       UI.lobby.classList.remove('hidden');
     } else {
-      // Wenn ein Raum geladen wird, Setup durchführen
       dbRef = firebase.database().ref("timer_state/" + roomName);
       
       UI.timer.classList.remove('hidden');
@@ -344,7 +345,6 @@
       }
 
       initTimerSync();
-      // Intervall startet NUR, wenn wir auch wirklich in einem Raum sind
       displayInterval = setInterval(updateDisplay, 1000);
     }
 
@@ -380,7 +380,6 @@
       dbRef.on('value', (snapshot) => {
         const data = snapshot.val();
         if (data) {
-          // Prüfen ob Sprung in der Zeit (manuelle Änderung) für Flash-Effekt
           if (!state.isInitialLoad) {
             const expected = data.isRunning ? Math.round((data.targetTime - Date.now()) / 1000) : data.durationLeft;
             if (Math.abs(expected - state.lastDurationLeft) > 1) triggerFlash();
@@ -391,11 +390,9 @@
           state.durationLeft = data.durationLeft ?? 1800;
           state.defaultDuration = data.defaultDuration ?? 1800;
           
-          // UI Buttons aktualisieren
           UI.playIcon.classList.toggle('hidden', state.isRunning);
           UI.pauseIcon.classList.toggle('hidden', !state.isRunning);
 
-          // Alarme zurücksetzen, wenn Timer wieder im Plus ist
           if (getCurrentSeconds() > 0) {
             state.alertedZero = false;
             state.alertedMinus2 = false;
@@ -434,7 +431,6 @@
     function updateDisplay() {
       let secs = getCurrentSeconds();
 
-      // Auto-Reset bei -10 Minuten
       if (secs <= -600) {
         secs = state.defaultDuration;
         state.alertedZero = false;
@@ -445,7 +441,6 @@
 
       state.lastDurationLeft = secs;
 
-      // Zeit-Formatierung
       const isNegative = secs < 0;
       const absSecs = Math.abs(secs);
       const m = Math.floor(absSecs / 60).toString().padStart(2, '0');
@@ -453,12 +448,10 @@
       
       UI.timer.textContent = `${isNegative ? '-' : ''}${m}:${s}`;
 
-      // Hintergrundfarben (Warnung/Abgelaufen)
       document.body.classList.remove('warning', 'expired');
       if (secs <= 0) document.body.classList.add('expired');
       else if (secs <= 120) document.body.classList.add('warning');
 
-      // Alarm-Trigger
       if (secs <= 0 && !state.alertedZero) {
         playAlarmSound();
         state.alertedZero = true;
@@ -523,8 +516,8 @@
     }
 
 
-    /* ========================================================================
-       6. HILFS-FUNKTIONEN (QR, Eruda, WakeLock)
+ /* ========================================================================
+       6. HILFS-FUNKTIONEN (QR, Eruda, WakeLock & User-Audio)
        ======================================================================== */
     function getUserUrl() {
       const url = new URL(window.location.href);
@@ -544,11 +537,10 @@
     async function requestWakeLock() {
       if (!wakeLock) {
         try { wakeLock = await navigator.wakeLock.request('screen'); } 
-        catch (e) { /* Wird silently ignoriert wenn nicht unterstützt */ }
+        catch (e) {}
       }
     }
 
-    // WakeLock für Admin (passiert unsichtbar beim ersten Klick)
     function enableAdminInteractiveWakeLock() {
       const initLock = () => {
         unlockAudioSilent();
@@ -565,24 +557,31 @@
       });
     }
 
-    // WakeLock für normale Nutzer (über Button)
+    // Toggle-Funktion für normale Nutzer: An/Aus schalten
     async function enableUserAudioAndWakeLock() {
-      unlockAudioSilent();
       const btn = document.getElementById('wake-lock-button');
       
-      if (!wakeLock) {
+      if (!isUserAudioEnabled) {
+        // --- EINSCHALTEN ---
+        unlockAudioSilent();
         await requestWakeLock();
+        isUserAudioEnabled = true;
+
         btn.textContent = "Ton & Bildschirm-Awake aktiv ✓";
         btn.style.backgroundColor = "#1b5e20";
       } else {
-        await wakeLock.release();
-        wakeLock = null;
+        // --- AUSSCHALTEN ---
+        if (wakeLock) {
+          await wakeLock.release();
+          wakeLock = null;
+        }
+        isUserAudioEnabled = false;
+
         btn.textContent = "Ton & Bildschirm-Awake aktivieren";
         btn.style.backgroundColor = "#222";
       }
     }
 
-    // Easter-Egg: Entwickler-Konsole auf dem Handy öffnen (3x Klick auf QR Code)
     function setupSecretEruda() {
       let tapCount = 0, tapTimer = null;
       document.getElementById("user-qr").addEventListener('click', () => {
@@ -605,9 +604,9 @@
   </script>
 
   <!-- Footer-Bereich der Start & Admin-Seite -->
-<footer style="text-align: center; padding: 20px; font-size: 12px; color: #888; margin-top: 40px;">
-    Version 1.0
-</footer>
+  <footer style="text-align: center; padding: 20px; font-size: 12px; color: #888; margin-top: 40px;">
+    Version 1.2
+  </footer>
 
 </body>
 </html>
