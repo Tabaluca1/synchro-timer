@@ -260,6 +260,7 @@
       isInitialLoad: true,
       lastDurationLeft: 1800,
       alertedZero: false,
+      alertedMinus2: false,
       alertedMinus5: false
     };
 
@@ -388,6 +389,7 @@
           // Alarme zurücksetzen, wenn Timer wieder im Plus ist
           if (getCurrentSeconds() > 0) {
             state.alertedZero = false;
+            state.alertedMinus2 = false;
             state.alertedMinus5 = false;
           }
 
@@ -427,6 +429,7 @@
       if (secs <= -600) {
         secs = state.defaultDuration;
         state.alertedZero = false;
+        state.alertedMinus2 = false;
         state.alertedMinus5 = false;
         if (isAdmin) pushState(false, 0, state.defaultDuration, state.defaultDuration);
       }
@@ -450,6 +453,10 @@
       if (secs <= 0 && !state.alertedZero) {
         playAlarmSound();
         state.alertedZero = true;
+      }
+      if (secs <= -120 && !state.alertedMinus2) {
+        playAlarmSound();
+        state.alertedMinus2 = true;
       }
       if (secs <= -300 && !state.alertedMinus5) {
         playAlarmSound();
