@@ -9,6 +9,9 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
   <style>
+    /* =========================================
+       1. GRUND-LAYOUT & GLOBALE STYLES
+       ========================================= */
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: system-ui, -apple-system, sans-serif;
@@ -23,24 +26,19 @@
       padding: 20px;
     }
     
-    /* Warnung bei unter 2 Minuten */
+    .hidden { display: none !important; }
+
+    /* =========================================
+       2. TIMER & ANIMATIONEN
+       ========================================= */
     body.warning { background-color: #d9381e; }
-    
-    /* Wellenartiges Pulsieren nach Ablauf der Zeit */
-    body.expired {
-      animation: pulseRed 2s infinite ease-in-out;
-    }
+    body.expired { animation: pulseRed 2s infinite ease-in-out; }
+    body.flash { background-color: #1e88e5 !important; animation: none !important; }
 
     @keyframes pulseRed {
       0% { background-color: #000000; }
       50% { background-color: #e61919; }
       100% { background-color: #000000; }
-    }
-
-    /* Kurzes blaues Aufleuchten bei Zeitänderung */
-    body.flash { 
-      background-color: #1e88e5 !important; 
-      animation: none !important;
     }
 
     .timer-display {
@@ -49,9 +47,19 @@
       margin: 10px 0;
       cursor: pointer;
       user-select: none;
-      font-variant-numeric: tabular-nums;
+      font-variant-numeric: tabular-nums; /* Sorgt dafür, dass Zahlen nicht "wackeln" */
     }
 
+    .status-text {
+      font-size: 0.85rem;
+      color: #aaa;
+      text-align: center;
+      margin-bottom: 15px;
+    }
+
+    /* =========================================
+       3. BUTTONS & STEUERUNG
+       ========================================= */
     .controls {
       display: flex;
       flex-direction: column;
@@ -80,23 +88,22 @@
     }
     button:active { background-color: #444; }
 
-    #wake-lock-button {
-      width: 100%;
-      white-space: nowrap; /* Verhindert das Umbrechen in zwei Zeilen */
-      font-size: clamp(0.75rem, 3.5vw, 0.95rem); /* Dynamische Anpassung an die Displaybreite */
-      padding: 12px 10px;
-    }
-
     .btn-action { background-color: #2e6da4; border-color: #357ebd; }
     .btn-reset { background-color: #333; border-color: #555; }
     .btn-reset:active { background-color: #555; }
 
-    .icon-svg {
-      width: 24px;
-      height: 24px;
-      fill: currentColor;
+    #wake-lock-button {
+      width: 100%;
+      white-space: nowrap;
+      font-size: clamp(0.75rem, 3.5vw, 0.95rem);
+      padding: 12px 10px;
     }
+
+    .icon-svg { width: 24px; height: 24px; fill: currentColor; }
     
+    /* =========================================
+       4. LOBBY & QR-PANEL
+       ========================================= */
     .qr-panel {
       display: flex;
       flex-direction: column;
@@ -116,14 +123,6 @@
       user-select: none;
     }
 
-    .status-text {
-      font-size: 0.85rem;
-      color: #aaa;
-      text-align: center;
-      margin-bottom: 15px;
-    }
-
-    /* STARTSEITE / LOBBY STYLES */
     .lobby-card {
       background: #111;
       padding: 24px;
@@ -136,6 +135,7 @@
       gap: 16px;
     }
     .lobby-card h2 { font-size: 1.5rem; text-align: center; }
+    
     .form-group { display: flex; flex-direction: column; gap: 6px; }
     .form-group label { font-size: 0.9rem; color: #ccc; font-weight: bold; }
     .form-group input {
@@ -146,65 +146,54 @@
       color: #fff;
       font-size: 1rem;
     }
-
-    .hidden { display: none !important; }
   </style>
 </head>
 <body>
 
-  <!-- 0. LOBBY / STARTSEITE (Standardmäßig sichtbar, wenn kein Raum gewählt ist) -->
-  <div id="lobby-view" class="lobby-card">
+  <!-- LOBBY / STARTSEITE -->
+  <div id="lobby-view" class="lobby-card hidden">
     <h2>Synchro Timer</h2>
-    
     <div id="lobby-step-1">
       <button class="btn-action" style="width: 100%; margin-top: 10px;" onclick="showSetupForm()">Timer erstellen</button>
     </div>
-
     <div id="lobby-step-2" class="hidden">
       <div class="form-group">
         <label for="room-name-input">Timer benennen</label>
         <input type="text" id="room-name-input" placeholder="z.B. countdown" autocomplete="off">
       </div>
-      
       <div class="form-group" style="margin-top: 10px;">
         <label for="initial-time-input">Länge des Timers (Minuten)</label>
         <input type="number" id="initial-time-input" value="30" min="1" max="999">
       </div>
-
       <button class="btn-action" style="width: 100%; margin-top: 15px;" onclick="createRoom()">Timer einrichten</button>
     </div>
   </div>
 
-  <!-- 1. QR-CODE BEREICH (NUR ADMIN) -->
+  <!-- QR-CODE BEREICH (NUR ADMIN) -->
   <div id="admin-qr-panel" class="qr-panel hidden">
     <div style="font-weight:bold; font-size:0.9rem;">QR-Code für Nutzer</div>
     <div id="user-qr"></div>
     <button onclick="copyUserLink()" style="font-size: 0.85rem; padding: 6px 10px;">Link kopieren</button>
   </div>
 
-  <!-- 2. TIMER ANZEIGE -->
+  <!-- TIMER ANZEIGE -->
   <div class="timer-display hidden" id="timer" onclick="manualEdit()">30:00</div>
 
-  <!-- 3. LIVE STATUS -->
+  <!-- LIVE STATUS -->
   <div id="sync-status" class="status-text hidden">Verbinde mit Server...</div>
 
-  <!-- 4. WACHHALTEN & SOUND BUTTON (NUR NUTZER) -->
+  <!-- WACHHALTEN & SOUND BUTTON (NUR NUTZER) -->
   <div id="user-wake-lock" class="controls hidden">
     <button id="wake-lock-button" type="button" onclick="enableUserAudioAndWakeLock()">Ton & Bildschirm-Awake aktivieren</button>
   </div>
 
-  <!-- 5. BEDIENUNG ADMIN (START/PAUSE TOGGLE & RESET + ZEIT-BUTTONS) -->
+  <!-- BEDIENUNG ADMIN -->
   <div id="admin-controls" class="controls hidden">
     <div class="btn-group">
-      <!-- Toggle Button (Play/Pause Icon) -->
       <button id="toggle-btn" class="btn-action" onclick="togglePlayPause()" aria-label="Start/Pause">
-        <!-- Play Icon (Standard) -->
         <svg id="play-icon" class="icon-svg" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-        <!-- Pause Icon -->
         <svg id="pause-icon" class="icon-svg hidden" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
       </button>
-
-      <!-- Reset Button -->
       <button class="btn-reset" onclick="resetToDefaultTime()" aria-label="Reset">
         <svg class="icon-svg" viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>
       </button>
@@ -219,12 +208,16 @@
     </div>
   </div>
 
-  <!-- Firebase SDKs einbinden -->
+  <!-- Firebase SDKs -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
   <script>
-    // 1. FIREBASE KONFIGURATION
+    "use strict"; // Sorgt für striktere Fehlerprüfung im Code
+
+    /* ========================================================================
+       1. SETUP & VARIABLEN
+       ======================================================================== */
     const firebaseConfig = {
       apiKey: "AIzaSyBZ8TNHdABZ9YEl84jAltPC5_iEbZMYnB0",
       authDomain: "synchro-timer1.firebaseapp.com",
@@ -236,60 +229,59 @@
       measurementId: "G-W82QS25S5W"
     };
 
-    try {
-      firebase.initializeApp(firebaseConfig);
-    } catch(e) {
-      console.error("Firebase Init Fehler:", e);
-    }
+    try { firebase.initializeApp(firebaseConfig); } 
+    catch(e) { console.error("Firebase Init Fehler:", e); }
 
-    // URL-PARAMETER AUSLESEN
     const urlParams = new URLSearchParams(window.location.search);
     const roomName = urlParams.get('room');
     const isAdmin = urlParams.get('role') === 'admin';
 
-    // UI ELEMENTE
-    const lobbyView = document.getElementById('lobby-view');
-    const adminQrPanel = document.getElementById('admin-qr-panel');
-    const timerElement = document.getElementById('timer');
-    const syncStatus = document.getElementById('sync-status');
-    const userWakeLock = document.getElementById('user-wake-lock');
-    const adminControls = document.getElementById('admin-controls');
-    const playIcon = document.getElementById('play-icon');
-    const pauseIcon = document.getElementById('pause-icon');
+    const UI = {
+      lobby: document.getElementById('lobby-view'),
+      adminQr: document.getElementById('admin-qr-panel'),
+      timer: document.getElementById('timer'),
+      status: document.getElementById('sync-status'),
+      userLock: document.getElementById('user-wake-lock'),
+      adminControls: document.getElementById('admin-controls'),
+      playIcon: document.getElementById('play-icon'),
+      pauseIcon: document.getElementById('pause-icon')
+    };
 
-    // ==========================================
-    // AUDIO SYSTEM (NEU: VOLLSTÄNDIG WEB AUDIO API)
-    // ==========================================
+    let dbRef = null;
+    let wakeLock = null;
+    let displayInterval = null;
+
+    // Timer State
+    const state = {
+      isRunning: false,
+      targetTime: 0,
+      durationLeft: 1800,
+      defaultDuration: 1800,
+      isInitialLoad: true,
+      lastDurationLeft: 1800,
+      alertedZero: false,
+      alertedMinus5: false
+    };
+
+
+    /* ========================================================================
+       2. AUDIO SYSTEM (Web Audio API)
+       ======================================================================== */
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    let audioContext = new AudioCtx();
+    const audioContext = new AudioCtx();
     let isAudioUnlocked = false;
     let alarmBuffer = null;
 
-    // Lade die Audio-Datei direkt beim Start (im Hintergrund)
-    async function preloadAlarmAudio() {
-      try {
-        const response = await fetch('alarm.mp3');
-        const arrayBuffer = await response.arrayBuffer();
-        audioContext.decodeAudioData(arrayBuffer, (buffer) => {
-          alarmBuffer = buffer;
-          console.log("Alarm-Audio erfolgreich im Hintergrund dekodiert.");
-        }, (e) => {
-          console.error("Fehler beim Dekodieren der Audio-Daten", e);
-        });
-      } catch (err) {
-        console.error("Fehler beim Laden von alarm.mp3", err);
-      }
-    }
-    
-    // Starte den Download sofort
-    preloadAlarmAudio();
+    // Hintergrund-Download der MP3
+    fetch('alarm.mp3')
+      .then(res => res.arrayBuffer())
+      .then(buffer => audioContext.decodeAudioData(buffer))
+      .then(decoded => { alarmBuffer = decoded; })
+      .catch(err => console.error("Fehler beim Vorladen der MP3:", err));
 
     function unlockAudioSilent() {
       if (isAudioUnlocked) return;
-
       try {
-        // iOS Trick: Erzeuge einen unendlichen, lautlosen Ton (0 Hz / Stille)
-        // Dadurch bleibt das Audio-System wach und aktiv
         const buffer = audioContext.createBuffer(1, 22050, 22050);
         const source = audioContext.createBufferSource();
         source.buffer = buffer;
@@ -297,82 +289,55 @@
         source.connect(audioContext.destination);
         source.start(0);
 
-        if (audioContext.state === 'suspended') {
-          audioContext.resume();
-        }
-        
+        if (audioContext.state === 'suspended') audioContext.resume();
         isAudioUnlocked = true;
-        console.log("Audio-Hardware für iOS dauerhaft entsperrt!");
       } catch (e) {
-        console.log("Fehler beim Freischalten der Audio-Hardware:", e);
+        console.warn("Audio-Unlock fehlgeschlagen:", e);
       }
     }
 
     function playAlarmSound() {
-      if (audioContext && audioContext.state === 'suspended') {
-        audioContext.resume();
-      }
-
+      if (audioContext.state === 'suspended') audioContext.resume();
+      
       if (alarmBuffer) {
-        // Spiele den dekodierten Puffer direkt aus dem Speicher ab
         const source = audioContext.createBufferSource();
         source.buffer = alarmBuffer;
         source.connect(audioContext.destination);
         source.start(0);
-        console.log("Alarm via Web Audio API abgespielt.");
       } else {
-        // Fallback: Falls die Datei noch nicht fertig geladen war
-        console.log("Fallback: HTML5 Audio wird genutzt.");
-        const alarm = new Audio('alarm.mp3');
-        alarm.play().catch(e => {
-          console.log("Audio-Wiedergabe vom Browser blockiert:", e);
-        });
+        // Fallback, falls Fetch fehlschlug oder extrem langsam war
+        new Audio('alarm.mp3').play().catch(() => {});
       }
     }
-    // ==========================================
 
 
-    // TIMER VARIABLEN
-    let db = null;
-    let isRunning = false;
-    let targetTime = 0;
-    let durationLeft = 1800;
-    let defaultDuration = 1800;
-    
-    let isInitialLoad = true;
-    let lastDurationLeft = 1800;
-    
-    let alertedStages = {
-      zero: false,
-      minus5: false
-    };
-
-    let wakeLock = null;
-
-    // A. ANSICHT STEUERN: LOBBY ODER TIMER
+    /* ========================================================================
+       3. ROUTING & LOBBY LOGIK
+       ======================================================================== */
     if (!roomName) {
-      lobbyView.classList.remove('hidden');
+      UI.lobby.classList.remove('hidden');
     } else {
-      lobbyView.classList.add('hidden');
-      db = firebase.database().ref("timer_state/" + roomName);
+      // Wenn ein Raum geladen wird, Setup durchführen
+      dbRef = firebase.database().ref("timer_state/" + roomName);
       
-      timerElement.classList.remove('hidden');
-      syncStatus.classList.remove('hidden');
+      UI.timer.classList.remove('hidden');
+      UI.status.classList.remove('hidden');
 
       if (isAdmin) {
-        adminQrPanel.classList.remove('hidden');
-        adminControls.classList.remove('hidden');
+        UI.adminQr.classList.remove('hidden');
+        UI.adminControls.classList.remove('hidden');
         setupQRCode();
         setupSecretEruda();
         enableAdminInteractiveWakeLock();
       } else {
-        userWakeLock.classList.remove('hidden');
+        UI.userLock.classList.remove('hidden');
       }
 
       initTimerSync();
+      // Intervall startet NUR, wenn wir auch wirklich in einem Raum sind
+      displayInterval = setInterval(updateDisplay, 1000);
     }
 
-    // B. STARTSEITEN-LOGIK
     function showSetupForm() {
       document.getElementById('lobby-step-1').classList.add('hidden');
       document.getElementById('lobby-step-2').classList.remove('hidden');
@@ -382,15 +347,11 @@
       const nameInput = document.getElementById('room-name-input').value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
       const timeInput = parseInt(document.getElementById('initial-time-input').value, 10);
 
-      if (!nameInput) {
-        alert("Bitte gib einen gültigen Namen für den Timer ein.");
-        return;
-      }
-
+      if (!nameInput) return alert("Bitte gib einen gültigen Namen ein.");
+      
       const initialSeconds = (!isNaN(timeInput) && timeInput > 0) ? timeInput * 60 : 1800;
 
-      const newDb = firebase.database().ref("timer_state/" + nameInput);
-      newDb.set({
+      firebase.database().ref("timer_state/" + nameInput).set({
         isRunning: false,
         targetTime: 0,
         durationLeft: initialSeconds,
@@ -398,150 +359,130 @@
         updatedAt: Date.now()
       }).then(() => {
         window.location.href = `?room=${nameInput}&role=admin`;
-      }).catch(err => {
-        console.error("Fehler beim Erstellen:", err);
-        alert("Fehler beim Erstellen des Timers.");
-      });
+      }).catch(() => alert("Fehler beim Erstellen des Timers."));
     }
 
-    // C. ECHTZEIT-SYNCHRONISATION MIT SERVER
+
+    /* ========================================================================
+       4. FIREBASE SYNC & TIMER BERECHNUNG
+       ======================================================================== */
     function initTimerSync() {
-      db.on('value', (snapshot) => {
+      dbRef.on('value', (snapshot) => {
         const data = snapshot.val();
         if (data) {
-          if (!isInitialLoad) {
-            const expectedRemaining = data.isRunning ? Math.round((data.targetTime - Date.now()) / 1000) : data.durationLeft;
-            if (Math.abs(expectedRemaining - lastDurationLeft) > 1) {
-              triggerFlash();
-            }
+          // Prüfen ob Sprung in der Zeit (manuelle Änderung) für Flash-Effekt
+          if (!state.isInitialLoad) {
+            const expected = data.isRunning ? Math.round((data.targetTime - Date.now()) / 1000) : data.durationLeft;
+            if (Math.abs(expected - state.lastDurationLeft) > 1) triggerFlash();
           }
           
-          isRunning = data.isRunning;
-          targetTime = data.targetTime || 0;
-          durationLeft = data.durationLeft !== undefined ? data.durationLeft : 1800;
-          defaultDuration = data.defaultDuration !== undefined ? data.defaultDuration : 1800;
+          state.isRunning = data.isRunning;
+          state.targetTime = data.targetTime || 0;
+          state.durationLeft = data.durationLeft ?? 1800;
+          state.defaultDuration = data.defaultDuration ?? 1800;
           
-          if (isRunning) {
-            playIcon.classList.add('hidden');
-            pauseIcon.classList.remove('hidden');
-          } else {
-            playIcon.classList.remove('hidden');
-            pauseIcon.classList.add('hidden');
+          // UI Buttons aktualisieren
+          UI.playIcon.classList.toggle('hidden', state.isRunning);
+          UI.pauseIcon.classList.toggle('hidden', !state.isRunning);
+
+          // Alarme zurücksetzen, wenn Timer wieder im Plus ist
+          if (getCurrentSeconds() > 0) {
+            state.alertedZero = false;
+            state.alertedMinus5 = false;
           }
 
-          const currentSecs = getCurrentSeconds();
-          if (currentSecs > 0) {
-            alertedStages.zero = false;
-            alertedStages.minus5 = false;
-          }
-
-          isInitialLoad = false;
+          state.isInitialLoad = false;
           updateDisplay();
           
-          syncStatus.textContent = "● Live synchronisiert";
-          syncStatus.style.color = "#4CAF50";
+          UI.status.textContent = "● Live synchronisiert";
+          UI.status.style.color = "#4CAF50";
         } else if (isAdmin) {
           pushState(false, 0, 1800, 1800);
         }
-      }, (error) => {
-        console.error("Firebase Datenbank-Fehler:", error);
-        syncStatus.textContent = "Verbindungsfehler";
-        syncStatus.style.color = "#f44336";
+      }, () => {
+        UI.status.textContent = "Verbindungsfehler";
+        UI.status.style.color = "#f44336";
       });
     }
 
-    function pushState(runningState, target, duration, defDur) {
-      if (!isAdmin || !db) return;
-      db.set({
-        isRunning: runningState,
+    function pushState(running, target, duration, defaultDur = state.defaultDuration) {
+      if (!isAdmin || !dbRef) return;
+      dbRef.set({
+        isRunning: running,
         targetTime: target,
         durationLeft: duration,
-        defaultDuration: defDur !== undefined ? defDur : defaultDuration,
+        defaultDuration: defaultDur,
         updatedAt: Date.now()
       }).catch(err => console.error("Schreibfehler:", err));
     }
 
     function getCurrentSeconds() {
-      if (isRunning) {
-        return Math.round((targetTime - Date.now()) / 1000);
-      }
-      return durationLeft;
+      return state.isRunning ? Math.round((state.targetTime - Date.now()) / 1000) : state.durationLeft;
     }
 
-    // D. TIMER DISPLAY & RESET BEI -10 MINUTEN
     function updateDisplay() {
-      if (!roomName) return;
       let secs = getCurrentSeconds();
 
+      // Auto-Reset bei -10 Minuten
       if (secs <= -600) {
-        secs = defaultDuration;
-        alertedStages.zero = false;
-        alertedStages.minus5 = false;
-        if (isAdmin) {
-          pushState(false, 0, defaultDuration, defaultDuration);
-        }
+        secs = state.defaultDuration;
+        state.alertedZero = false;
+        state.alertedMinus5 = false;
+        if (isAdmin) pushState(false, 0, state.defaultDuration, state.defaultDuration);
       }
 
-      lastDurationLeft = secs;
+      state.lastDurationLeft = secs;
 
+      // Zeit-Formatierung
       const isNegative = secs < 0;
-      const absSeconds = Math.abs(secs);
-      const displayMins = Math.floor(absSeconds / 60);
-      const displaySecs = absSeconds % 60;
+      const absSecs = Math.abs(secs);
+      const m = Math.floor(absSecs / 60).toString().padStart(2, '0');
+      const s = (absSecs % 60).toString().padStart(2, '0');
       
-      timerElement.textContent = 
-        `${isNegative ? '-' : ''}${displayMins.toString().padStart(2, '0')}:${displaySecs.toString().padStart(2, '0')}`;
+      UI.timer.textContent = `${isNegative ? '-' : ''}${m}:${s}`;
 
+      // Hintergrundfarben (Warnung/Abgelaufen)
       document.body.classList.remove('warning', 'expired');
-      if (secs <= 0) {
-        document.body.classList.add('expired');
-      } else if (secs <= 120) {
-        document.body.classList.add('warning');
-      }
+      if (secs <= 0) document.body.classList.add('expired');
+      else if (secs <= 120) document.body.classList.add('warning');
 
-      if (secs <= 0 && !alertedStages.zero) {
+      // Alarm-Trigger
+      if (secs <= 0 && !state.alertedZero) {
         playAlarmSound();
-        alertedStages.zero = true;
+        state.alertedZero = true;
       }
-      if (secs <= -300 && !alertedStages.minus5) {
+      if (secs <= -300 && !state.alertedMinus5) {
         playAlarmSound();
-        alertedStages.minus5 = true;
+        state.alertedMinus5 = true;
       }
     }
 
-    setInterval(updateDisplay, 1000);
 
-    // E. BEDIENUNG (ADMIN)
+    /* ========================================================================
+       5. ADMIN BEDIENUNG
+       ======================================================================== */
     function togglePlayPause() {
       unlockAudioSilent();
-      if (isRunning) {
-        const currentSecs = getCurrentSeconds();
+      const currentSecs = getCurrentSeconds();
+      if (state.isRunning) {
         pushState(false, 0, currentSecs);
       } else {
-        let currentSecs = getCurrentSeconds();
-        const newTarget = Date.now() + (currentSecs * 1000);
-        pushState(true, newTarget, currentSecs);
+        pushState(true, Date.now() + (currentSecs * 1000), currentSecs);
       }
     }
 
     function resetToDefaultTime() {
       if (!isAdmin) return;
       unlockAudioSilent();
-      pushState(false, 0, defaultDuration, defaultDuration);
-      alertedStages.zero = false;
-      alertedStages.minus5 = false;
+      pushState(false, 0, state.defaultDuration, state.defaultDuration);
     }
 
     function changeTime(sec) {
       unlockAudioSilent();
-      let currentSecs = getCurrentSeconds();
-      let newSecs = currentSecs + sec;
-      
+      const newSecs = getCurrentSeconds() + sec;
       triggerFlash();
-      
-      if (isRunning) {
-        const newTarget = Date.now() + (newSecs * 1000);
-        pushState(true, newTarget, newSecs);
+      if (state.isRunning) {
+        pushState(true, Date.now() + (newSecs * 1000), newSecs);
       } else {
         pushState(false, 0, newSecs);
       }
@@ -550,17 +491,13 @@
     function manualEdit() {
       if (!isAdmin) return;
       unlockAudioSilent();
-      const currentSecs = getCurrentSeconds();
-      const input = prompt("Neue Zeit in Minuten eingeben:", Math.floor(currentSecs / 60));
+      const input = prompt("Neue Zeit in Minuten eingeben:", Math.floor(getCurrentSeconds() / 60));
       if (input !== null && !isNaN(input) && input.trim() !== "") {
         const newSecs = parseInt(input, 10) * 60;
         triggerFlash();
-        if (isRunning) {
-          const newTarget = Date.now() + (newSecs * 1000);
-          pushState(true, newTarget, newSecs);
-        } else {
-          pushState(false, 0, newSecs);
-        }
+        state.isRunning 
+          ? pushState(true, Date.now() + (newSecs * 1000), newSecs)
+          : pushState(false, 0, newSecs);
       }
     }
 
@@ -569,7 +506,10 @@
       setTimeout(() => document.body.classList.remove('flash'), 500);
     }
 
-    // F. HELFER (QR-Code, Wachhalten & Verstecktes Eruda)
+
+    /* ========================================================================
+       6. HILFS-FUNKTIONEN (QR, Eruda, WakeLock)
+       ======================================================================== */
     function getUserUrl() {
       const url = new URL(window.location.href);
       url.searchParams.delete('role');
@@ -577,39 +517,7 @@
     }
 
     function setupQRCode() {
-      new QRCode(document.getElementById("user-qr"), {
-        text: getUserUrl(),
-        width: 160,
-        height: 160
-      });
-    }
-
-    function setupSecretEruda() {
-      const qrElem = document.getElementById("user-qr");
-      let tapCount = 0;
-      let tapTimer = null;
-
-      qrElem.addEventListener('click', () => {
-        tapCount++;
-        clearTimeout(tapTimer);
-
-        if (tapCount === 3) {
-          tapCount = 0;
-          if (window.eruda) {
-            window.eruda.show();
-          } else {
-            const script = document.createElement('script');
-            script.src = 'https://cdn.jsdelivr.net/npm/eruda';
-            script.onload = () => {
-              window.eruda.init();
-              window.eruda.show();
-            };
-            document.body.appendChild(script);
-          }
-        } else {
-          tapTimer = setTimeout(() => { tapCount = 0; }, 1000);
-        }
-      });
+      new QRCode(document.getElementById("user-qr"), { text: getUserUrl(), width: 160, height: 160 });
     }
 
     function copyUserLink() {
@@ -617,47 +525,39 @@
       alert("Nutzer-Link in Zwischenablage kopiert!");
     }
 
-    // WAKE LOCK INTERAKTIV FÜR ADMIN
+    async function requestWakeLock() {
+      if (!wakeLock) {
+        try { wakeLock = await navigator.wakeLock.request('screen'); } 
+        catch (e) { /* Wird silently ignoriert wenn nicht unterstützt */ }
+      }
+    }
+
+    // WakeLock für Admin (passiert unsichtbar beim ersten Klick)
     function enableAdminInteractiveWakeLock() {
-      const requestLock = async () => {
+      const initLock = () => {
         unlockAudioSilent();
-        if (!wakeLock) {
-          try {
-            wakeLock = await navigator.wakeLock.request('screen');
-          } catch (e) {
-            console.log("Wake-Lock konnte nicht aktiviert werden:", e);
-          }
-        }
+        requestWakeLock();
       };
-
-      document.addEventListener('pointerdown', requestLock, { once: true });
-
+      document.addEventListener('pointerdown', initLock, { once: true });
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
-          if (audioContext && audioContext.state === 'suspended') {
-            audioContext.resume();
-          }
-          document.addEventListener('pointerdown', requestLock, { once: true });
+          if (audioContext.state === 'suspended') audioContext.resume();
+          document.addEventListener('pointerdown', initLock, { once: true });
         } else {
           wakeLock = null;
         }
       });
     }
 
-    // NUTZER-BUTTON: LAUTLOSES FREISCHALTEN UND BILDSHIRM WACHHALTEN
+    // WakeLock für normale Nutzer (über Button)
     async function enableUserAudioAndWakeLock() {
       unlockAudioSilent();
-      
       const btn = document.getElementById('wake-lock-button');
+      
       if (!wakeLock) {
-        try {
-          wakeLock = await navigator.wakeLock.request('screen');
-          btn.textContent = "Ton & Bildschirm-Awake aktiv ✓";
-          btn.style.backgroundColor = "#1b5e20";
-        } catch (e) {
-          btn.textContent = "Ton & Bildschirm-Awake aktiv ✓";
-          btn.style.backgroundColor = "#1b5e20";
-        }
+        await requestWakeLock();
+        btn.textContent = "Ton & Bildschirm-Awake aktiv ✓";
+        btn.style.backgroundColor = "#1b5e20";
       } else {
         await wakeLock.release();
         wakeLock = null;
@@ -666,14 +566,32 @@
       }
     }
 
-    // ZUSÄTZLICHES IOS AWAKE-HANDLING
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && audioContext) {
-        if (audioContext.state === 'suspended') {
-          audioContext.resume();
+    // Easter-Egg: Entwickler-Konsole auf dem Handy öffnen (3x Klick auf QR Code)
+    function setupSecretEruda() {
+      let tapCount = 0, tapTimer = null;
+      document.getElementById("user-qr").addEventListener('click', () => {
+        tapCount++;
+        clearTimeout(tapTimer);
+        if (tapCount === 3) {
+          tapCount = 0;
+          if (window.eruda) window.eruda.show();
+          else {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/eruda';
+            script.onload = () => { window.eruda.init(); window.eruda.show(); };
+            document.body.appendChild(script);
+          }
+        } else {
+          tapTimer = setTimeout(() => tapCount = 0, 1000);
         }
-      }
-    });
+      });
+    }
   </script>
+
+  <!-- Footer-Bereich der Admin-Seite -->
+<footer style="text-align: center; padding: 20px; font-size: 12px; color: #888; border-top: 1px solid #eee; margin-top: 40px;">
+    Admin-Panel Version: 1.0
+</footer>
+
 </body>
 </html>
